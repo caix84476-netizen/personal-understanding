@@ -216,7 +216,7 @@ def retrieval_audit() -> dict[str, Any]:
     query = (ROOT / "scripts" / "query_context.py").read_text(encoding="utf-8")
     preflight = (ROOT / "scripts" / "preflight_context.py").read_text(encoding="utf-8")
     return {
-        "model_activation_contract": all(term in skill for term in ("three layers of divergence", "survey is a compact routing map")),
+        "model_activation_contract": all(term in skill for term in ("three layers of divergence", "survey is a compact routing map")) or all(term in skill for term in ("三层发散", "紧凑路由地图")),
         "global_survey_contract": "catalog_context.py --view" in skill and "probe" in skill,
         "preflight_does_not_retrieve": "subprocess" not in preflight and "query_context" not in preflight,
         "legacy_cues_default_off": "use_legacy_proactive = bool(args.legacy_proactive" in query and '"legacy-proactive-cues-active": false' not in skill.casefold(),

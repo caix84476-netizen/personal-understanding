@@ -8,6 +8,8 @@
 
 [中文文档](README.zh-CN.md) · [架构](#architecture) · [快速开始](#quick-start) · [设计原则](#design-principles)
 
+> **Two skill languages:** the repo ships **`SKILL.md`** (English) and **`SKILL.zh-CN.md`** (中文) — two brains, one shared bilingual engine. Install either by renaming it to `SKILL.md` in your skills folder. 中文用户可直接用 `SKILL.zh-CN.md`，配合中文档案效果最佳。
+
 `agent-memory` `mcp` `claude` `codex` `skills` `local-first` `personal-knowledge`
 
 </div>
