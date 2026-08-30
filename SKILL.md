@@ -384,6 +384,7 @@ Deep review may output warnings and material gaps, but never invents lost verbat
 - `scripts/record_feedback.py`: record how answers that relied on memory landed (helpful/missed/corrected); `review_v2 --deep` aggregates frequently corrected memories (see `references/review-and-feedback-loops.md`);
 - `scripts/rebuild_views.py`: rebuild legacy compatibility views and v2 derived views;
 - `scripts/backup_archive.py`: SHA256-manifested local backups, auto-mirrored to a second location from `memory/backup-config.json` (see `references/maintenance-and-durability.md`; after important updates, before migrations, and at least weekly);
+- `scripts/init_archive.py`: bootstrap a fresh archive skeleton (directories + generic domain branches) on a brand-new install; idempotent, run once before first use;
 - `scripts/install_mcp.py`: detect AI clients on this machine and register the local MCP service (idempotent; run once after changing machines or pasting the skill into a new client);
 - `scripts/mcp_server.py`: local MCP read/write entry;
 - `dashboard/`: the v2 visual audit panel.

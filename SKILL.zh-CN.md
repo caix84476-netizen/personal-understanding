@@ -386,6 +386,7 @@ survey 是紧凑路由地图，不含旧记录全量列表；需要按领域展�
 - `scripts/record_feedback.py`：记录依赖个人记忆的回答效果（helpful/missed/corrected），`review_v2 --deep` 汇总常被纠正的记忆（见 `references/review-and-feedback-loops.md`）；
 - `scripts/rebuild_views.py`：重建旧版兼容视图和 v2 派生视图；
 - `scripts/backup_archive.py`：生成带 SHA256 清单的本地备份，并自动镜像到 `memory/backup-config.json` 指定的第二位置（见 `references/maintenance-and-durability.md`；重要更新后、迁移前、至少每周一次）；
+- `scripts/init_archive.py`：全新安装时初始化档案骨架（目录 + 通用领域分支），首次使用前运行一次（幂等）；
 - `scripts/install_mcp.py`：检测本机各 AI 客户端并注册本地 MCP 服务（幂等；换机器、粘贴 skill 到新客户端后运行一次即可）；
 - `scripts/mcp_server.py`：本地 MCP 读写入口；
 - `dashboard/`：v2 可视化面板。
