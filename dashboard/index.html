@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Local audit dashboard for the Personal Understanding skill v2" />
+  <title>Personal Understanding · v2</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <button id="home" class="brand" type="button" aria-label="Back to overview">
+        <span class="brand-name">Personal Understanding</span><span class="brand-version">v2.0</span>
+      </button>
+      <div class="topbar-tools">
+        <span id="route-label" class="route-label">Overview</span>
+        <label class="search-box">
+          <span class="sr-only">Search</span>
+          <input id="search" type="search" placeholder="Search entities, events, verbatim, files" autocomplete="off" />
+        </label>
+        <button id="refresh" class="tool-button" type="button" title="Refresh data" aria-label="Refresh data">↻</button>
+      </div>
+    </header>
+    <section id="context-bar" class="context-bar" aria-live="polite"></section>
+    <section id="stage" class="stage" aria-live="polite"></section>
+  </main>
+  <aside id="drawer" class="drawer" aria-live="polite"></aside>
+  <script src="/app.js"></script>
+</body>
+</html>

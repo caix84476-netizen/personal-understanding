@@ -1,0 +1,190 @@
+[
+  {
+    "signal": "anxiety_or_confusion",
+    "triggers": [
+      "anxious",
+      "a little anxious",
+      "lost",
+      "uneasy",
+      "no direction",
+      "don't know what to do",
+      "mind is a mess",
+      "can't put it into words",
+      "overwhelmed"
+    ],
+    "expansions": [
+      "current pressure",
+      "study or career choice",
+      "future life",
+      "open decisions",
+      "long-term purpose",
+      "living environment"
+    ]
+  },
+  {
+    "signal": "loss_or_disappointment",
+    "triggers": [
+      "disappointed",
+      "regret",
+      "what a pity",
+      "rejected",
+      "fell through",
+      "didn't get it",
+      "missed out"
+    ],
+    "expansions": [
+      "long-term purpose",
+      "a meaningful purpose",
+      "ideal life",
+      "realistic feasibility",
+      "future life",
+      "autonomy"
+    ]
+  },
+  {
+    "signal": "choice_tension",
+    "triggers": [
+      "torn",
+      "conflicted",
+      "trade-off",
+      "don't know what to choose",
+      "not a good fit",
+      "don't like it",
+      "conflict",
+      "caught between two options"
+    ],
+    "expansions": [
+      "value ranking",
+      "study or career choice",
+      "realistic feasibility",
+      "autonomy",
+      "living environment",
+      "future possibilities"
+    ]
+  },
+  {
+    "signal": "repetition_or_error_cost",
+    "triggers": [
+      "repetitive",
+      "can't afford mistakes",
+      "error-prone",
+      "tired",
+      "chasing trends",
+      "doing the same thing every day",
+      "the same thing",
+      "making mistakes",
+      "afraid of making mistakes",
+      "low fault tolerance"
+    ],
+    "expansions": [
+      "repetitive work",
+      "fault tolerance",
+      "process visibility",
+      "meaning of work",
+      "realistic feasibility"
+    ]
+  },
+  {
+    "signal": "future_life_environment",
+    "triggers": [
+      "ideal life",
+      "life later on",
+      "future life",
+      "city",
+      "remote",
+      "novelty",
+      "change",
+      "environment",
+      "freedom",
+      "autonomy",
+      "new environment"
+    ],
+    "expansions": [
+      "personal space",
+      "autonomy",
+      "living environment",
+      "future possibilities",
+      "realistic feasibility"
+    ]
+  },
+  {
+    "signal": "moral_admiration",
+    "triggers": [
+      "good person",
+      "original intention",
+      "sense of responsibility",
+      "stepping in to stop it",
+      "restraint",
+      "passion",
+      "morality",
+      "kindness",
+      "moving",
+      "cried"
+    ],
+    "expansions": [
+      "fair play",
+      "procedural fairness",
+      "sense of responsibility",
+      "kindness",
+      "belonging to a group",
+      "individual dignity"
+    ]
+  },
+  {
+    "signal": "money_or_responsibility_transition",
+    "triggers": [
+      "budget",
+      "expenses",
+      "big purchase",
+      "who pays",
+      "part-time income",
+      "saving up",
+      "no money",
+      "being bounced around"
+    ],
+    "expansions": [
+      "resource facts",
+      "taking on responsibility",
+      "autonomy",
+      "privacy boundaries"
+    ]
+  },
+  {
+    "signal": "achievement_ambivalence",
+    "triggers": [
+      "succeeded but not happy",
+      "not happy",
+      "other people's expectations",
+      "praising me",
+      "regret",
+      "second-guessing",
+      "impostor feeling",
+      "counterfactual thinking"
+    ],
+    "expansions": [
+      "family support",
+      "counterfactual regret",
+      "autonomy",
+      "future life"
+    ]
+  },
+  {
+    "signal": "source_correction_or_social_boundary",
+    "triggers": [
+      "the analysis is wrong",
+      "privacy",
+      "gossip",
+      "stop guessing",
+      "go search",
+      "same name",
+      "that's not me"
+    ],
+    "expansions": [
+      "source attribution",
+      "evidence accuracy",
+      "personal space",
+      "communication preferences",
+      "corrections take priority"
+    ]
+  }
+]
