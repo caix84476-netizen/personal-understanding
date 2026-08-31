@@ -17,6 +17,12 @@ This is a **local, traceable, verbatim-first, timeline-driven personal cognition
 
 The legacy `memory/records/` layout is kept as a compatibility layer. The v2 derivation trunk lives in `memory/v2/`, and immutable conversation verbatims live in `sources/conversation/`.
 
+## Scope gate: do not archive technical work
+
+Before invoking this skill, classify the request. If it is primarily technical — including configuration, debugging, code, model/provider setup, MCP, plugins, repositories, or project maintenance — and the answer will not materially change because of the user's experiences, preferences, values, current state, or prior decisions, skip this skill entirely. Do not run a survey, capture the message, create a derived record, or store an audit copy for that request.
+
+Use this skill only when the request contains personal material, the user explicitly asks to remember or archive it, or personal context would materially change the recommendation, tradeoff, warning, or action order. A request to maintain this skill's boundaries is not itself personal material; update the skill rules without archiving the maintenance conversation.
+
 ## Highest priority: verbatim fidelity
 
 **Whenever the user adds content that belongs in the Personal Understanding skill — in any form, in any scenario — the complete user message must be saved verbatim, character for character, before any summarizing, event splitting, person extraction, relationship judgment, or causal interpretation.**
