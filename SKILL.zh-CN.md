@@ -49,7 +49,7 @@ verbatim fragment
 4. 原话捕获一旦存在，不得静默覆盖；纠正只能新增捕获和关系；
 5. 任何模型摘要都不能冒充用户原话；旧版只有摘要的记录必须标成 `summary_only`；
 6. 原话捕获失败时，必须报告失败，不得假装“已经存好了”；
-7. 使用 `scripts/capture_user_update.py` 或 MCP 工具 `personal_capture_user_turn` 完成捕获；
+7. 先用 `scripts/preflight_context.py <完整消息> --turn-id <turn-id>` 或 MCP `personal_preflight_turn` 创建同一轮的 receipt；再使用 `scripts/capture_user_update.py --turn-id <turn-id>` 或 MCP `personal_capture_user_turn` 完成捕获。文字 capture 的 SHA256 必须与 receipt 的完整消息一致；
 8. 使用 `personal_add_record` 写派生记录时，当前用户补充必须带 `capture_id` 或 `verbatim_refs`，禁止继续用裸 `current-conversation` 冒充原文。
 
 ### 派生闭环：捕获成功不等于档案更新完成
@@ -234,21 +234,23 @@ verbatim fragment
 
 ## 回答前硬闸门（不可跳过）
 
-只要当前用户消息包含个人经历、状态、感受、自我评价、关系、决定、纠正、长期偏好，或要求解释“我为什么会这样”，必须把**当前这条完整用户消息**作为一份新的 immutable capture 保存成功后，才能执行 survey、probe、deep、派生记录、因果分析或回答。不能用上一轮 capture、旧摘要、`current-conversation` 或模型记忆代替。
+只要当前用户消息包含个人经历、状态、感受、自我评价、关系、决定、纠正、长期偏好，或要求解释“我为什么会这样”，必须先通过**内容优先**的 preflight 创建当前轮 receipt，再把**当前这条完整用户消息**作为一份新的 immutable capture 保存成功后，才能执行 survey、probe、deep、派生记录、因果分析或回答。不能用上一轮 capture、旧摘要、`current-conversation` 或模型记忆代替。
 
 执行顺序固定为：
 
 ```text
-turn preflight → capture_user_turn 成功并回读校验 → survey/probe/deep → 派生记录/假设 → 回答
+内容优先 preflight receipt → capture（绑定 receipt，回读校验）
+→ survey/probe/deep → 派生记录/假设 → finalize
+→ session_check --turn-id → 回答/声称已更新
 ```
 
-若捕获失败，停止个人理解相关分析，明确报告失败原因；不得继续回答后再补录。若捕获成功但尚未形成派生记录，回答中必须明确区分”已保存原话”和”尚未写入经历/状态卡”，不得把原话捕获说成档案已经完整更新。写入或维护操作完成后、声称”档案已更新”之前，运行 `scripts/session_check.py`（或 MCP `personal_session_check`）；非 0 退出码时不得声称记忆已更新。
+receipt 是可审计的事实，不是让模型参考一下的提示：`requires_personal_understanding=true` 时，capture、finalize 和 `session_check --turn-id` 缺一项即 fail closed。若捕获失败，停止个人理解相关分析，明确报告失败原因；不得继续回答后再补录。若捕获成功但尚未形成派生记录，回答中必须明确区分”已保存原话”和”尚未写入经历/状态卡”，不得把原话捕获说成档案已经完整更新。
 
-这条闸门适用于直接提及个人档案、skill、记忆、原话或“记住”的消息，也适用于用户没有明确要求记忆但内容可能改变后续个人判断的消息。维护请求必须先捕获请求本身，再执行修复。
+这条闸门适用于直接提及个人档案、skill、记忆、原话或“记住”的消息，也同样适用于把个人经历、状态、感受、关系、偏好或决定包在改写、润色、翻译、总结、看图审阅任务里的消息。任务外形不能覆盖个人材料。纯技术、配置、排障、项目维护和本 Skill 规则维护不创建 receipt、capture 或派生记录。
 
 ### 低信号快速通道
 
-低信息量消息（“唉”“有点迷茫”“说不上来”，见 `scripts/preflight_context.py` 的 low-information 判定）同时受两份契约约束：回答要自然（见低信号响应契约），闸门又要求先捕获。为避免把聊天变成检索现场，低信号轮次按以下顺序执行：
+被内容判定为个人材料的低信息量消息（“有点迷茫”“说不上来”，见 `scripts/preflight_context.py` 的 low-information 判定）同时受两份契约约束：回答要自然（见低信号响应契约），闸门又要求先捕获。单独一个“唉”不会自动进入档案。为避免把聊天变成检索现场，低信号个人轮次按以下顺序执行：
 
 1. **capture 立即执行，不可延迟**——原话保真没有例外；
 2. **读取降级**：不跑完整 survey，直接用 preflight 输出里的到期回访 + 当前状态快照挑一个最可能的入口；确有必要才做一次小范围 probe；
@@ -381,15 +383,16 @@ survey 是紧凑路由地图，不含旧记录全量列表；需要按领域展�
 ## 维护入口
 
 - `scripts/capture_user_update.py`：先保存完整用户原话（超长消息优先用 `--stdin` 或 `--file`，避开命令行长度限制）；
+- `scripts/preflight_context.py` 与 `scripts/turn_receipts.py`：创建、读取和审计不可变的 turn receipt；
 - `scripts/capture_attachment.py`：保存或按 SHA256 精确去重原始附件，并登记 pending；
-- `scripts/derivation_ledger.py`：维护 capture→records 状态和链接审计；
+- `scripts/derivation_ledger.py`：维护 capture→records 状态和链接审计；`--repair` 可由 immutable capture metadata 和 record 引用重建投影；
 - `scripts/finalize_capture.py`：完成派生或记录“无需派生”的具体理由；
 - `scripts/catalog_context.py`：v2 全局 survey；
 - `scripts/retrieve_v2.py`：v2 probe/deep；
 - `scripts/followup_check.py`：待回访检查；
 - `scripts/review_v2.py --deep`：深度结构/保真/语义准备审查；
 - `scripts/validate_memory.py`：失败、警告、干净三态校验；
-- `scripts/session_check.py`：回答或声称"档案已更新"前的硬闸门（结构 + 派生闭环 + v2 完整性，失败退出码非 0）；
+- `scripts/session_check.py --turn-id <turn-id>`：回答或声称"档案已更新"前的硬闸门（receipt + 结构 + 派生闭环 + v2 完整性，失败退出码非 0）；
 - `scripts/salience_review.py`：季度记忆权重复盘，把长期未确认的导入权重降为提及级（见 `references/review-and-feedback-loops.md`）；
 - `scripts/record_feedback.py`：记录依赖个人记忆的回答效果（helpful/missed/corrected），`review_v2 --deep` 汇总常被纠正的记忆（见 `references/review-and-feedback-loops.md`）；
 - `scripts/rebuild_views.py`：重建旧版兼容视图和 v2 派生视图；
@@ -407,6 +410,7 @@ survey 是紧凑路由地图，不含旧记录全量列表；需要按领域展�
 - 永久删除必须由用户明确指定；
 - 旧摘要不删除，标记为迁移债务；
 - 新档案不覆盖旧档案，使用版本链；
+- 所有 writer（CLI、MCP、ledger、重建）共享进程间锁，并以原子 replace 落盘；写入一律在锁内基于最新磁盘快照读取、合并、提交。禁止从旧 JSON/JSONL 快照覆盖其他 Agent/MCP 已写入的数据；
 - 不把用户一句自我评价直接升级成人格定论；
 - 不为了让图谱好看而制造因果边、合并人物或填补时间。
 

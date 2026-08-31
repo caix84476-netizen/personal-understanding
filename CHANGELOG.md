@@ -5,6 +5,12 @@ The project is developed as a working, daily-driven archive — many entries bel
 were motivated by real incidents found during use, which is exactly why the
 hardening exists.
 
+## Unreleased — main branch hardening
+
+- Added content-first, immutable turn receipts so personal material cannot be skipped just because it is framed as rewriting, translation, summarization, or image review.
+- Bound capture, finalization, and `session_check --turn-id` to the receipt hash and made incomplete personal turns fail closed.
+- Added a shared inter-process mutation lock, atomic writes, ledger journal/repair, and locked MCP record/follow-up/hypothesis writers to prevent lost updates between Agents and MCP processes.
+
 ## 2.1.0 — 2026-08-29 (three review-and-repair rounds: correctness, product polish, loop closure)
 
 ### Correctness fixes (P0)

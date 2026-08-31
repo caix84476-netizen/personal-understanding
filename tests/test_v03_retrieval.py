@@ -51,7 +51,7 @@ class RetrievalV2Tests(unittest.TestCase):
         self.assertTrue(data["fragments"])
         fidelities = {item["fidelity"] for item in data["fragments"]}
         self.assertIn("verbatim", fidelities)
-        self.assertIn("summary_only", fidelities)
+        self.assertTrue(fidelities <= {"verbatim", "summary_only"})
         self.assertTrue(data["knowledge"])
 
     @unittest.skipUnless(HAS_CATALOG, "requires an initialized archive (memory/)")

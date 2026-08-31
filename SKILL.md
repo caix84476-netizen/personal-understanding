@@ -49,7 +49,7 @@ Mandatory:
 4. Once a verbatim capture exists it must never be silently overwritten; corrections only add new captures and relations;
 5. No model summary may ever pose as the user's verbatim; legacy records that only have summaries must be marked `summary_only`;
 6. If a verbatim capture fails, report the failure — never pretend it "was saved";
-7. Use `scripts/capture_user_update.py` or the MCP tool `personal_capture_user_turn` to capture;
+7. First create a same-turn receipt with `scripts/preflight_context.py <full-message> --turn-id <turn-id>` or MCP `personal_preflight_turn`; then capture with `scripts/capture_user_update.py --turn-id <turn-id>` or MCP `personal_capture_user_turn`. A text capture's SHA256 must match the receipt's full message;
 8. When writing derived records with `personal_add_record`, content the user just supplied must carry `capture_id` or `verbatim_refs`; bare `current-conversation` source attributions are forbidden.
 
 ### Derivation closure: a successful capture is not a finished update
@@ -237,16 +237,18 @@ Whenever the current user message contains personal experience, state, feelings,
 The execution order is fixed:
 
 ```text
-turn preflight → capture_user_turn succeeds and is read back → survey/probe/deep → derived records/hypotheses → answer
+content-first preflight receipt → capture bound to receipt (read-back verified)
+→ survey/probe/deep → derived records/hypotheses → finalize
+→ session_check --turn-id → answer / claim update
 ```
 
-If capture fails, stop all personal-understanding analysis and report the failure explicitly; never answer first and backfill later. If capture succeeds but no derived record exists yet, the answer must clearly distinguish "verbatim saved" from "not yet written into experience/state cards" — never present a raw capture as a fully updated archive. After any write or maintenance operation, and before claiming "the archive has been updated", run `scripts/session_check.py` (or MCP `personal_session_check`); on a non-zero exit code, never claim the memory was updated.
+The receipt is an auditable fact, not an advisory prompt: when `requires_personal_understanding=true`, capture, finalization, and `session_check --turn-id` are all mandatory and fail closed. If capture fails, stop all personal-understanding analysis and report the failure explicitly; never answer first and backfill later. If capture succeeds but no derived record exists yet, the answer must clearly distinguish "verbatim saved" from "not yet written into experience/state cards" — never present a raw capture as a fully updated archive.
 
-This gate applies to messages that explicitly mention the personal archive, the skill, memory, verbatims, or "remember" — and equally to messages that never asked for memory but may change future personal judgments. Maintenance requests must capture the request itself before executing the repair.
+This gate applies to messages that explicitly mention the personal archive, the skill, memory, verbatims, or "remember" — and equally to personal experiences, states, feelings, relationships, preferences, or decisions supplied through a rewrite, edit, translation, summary, or image-review request. Task form never overrides personal material. Pure technical work, configuration, debugging, project maintenance, and maintenance of this skill's rules do not create receipts, captures, or derived records.
 
 ### The low-signal fast path
 
-Low-information messages ("ugh", "kind of lost", "hard to say" — see the low-information detection in `scripts/preflight_context.py`) are bound by two contracts at once: answers must feel natural (see the low-signal response contract), yet the gate still demands capture. To keep chat from turning into a retrieval ceremony, low-signal turns run in this order:
+Low-information messages which are also content-classified as personal (for example, "kind of lost" or "hard to say") are bound by two contracts at once: answers must feel natural (see the low-signal response contract), yet the gate still demands capture. A bare "ugh" does not enter the archive by itself. To keep chat from turning into a retrieval ceremony, low-signal personal turns run in this order:
 
 1. **Capture immediately, no deferral** — verbatim fidelity has no exceptions;
 2. **Reads degrade**: skip the full survey; pick the single most likely entry from the due follow-ups and current-state snapshot in the preflight output; at most one small probe if truly necessary;
@@ -379,15 +381,16 @@ Deep review may output warnings and material gaps, but never invents lost verbat
 ## Maintenance entry points
 
 - `scripts/capture_user_update.py`: save the complete user verbatim first (for very long messages prefer `--stdin` or `--file` to dodge command-line length limits);
+- `scripts/preflight_context.py` and `scripts/turn_receipts.py`: create, read, and audit immutable turn receipts;
 - `scripts/capture_attachment.py`: store or SHA256-deduplicate raw attachments and register pending captures;
-- `scripts/derivation_ledger.py`: maintain capture→records state and link audits;
+- `scripts/derivation_ledger.py`: maintain capture→records state and link audits; `--repair` rebuilds the projection from immutable capture metadata and record references;
 - `scripts/finalize_capture.py`: complete a derivation or record the concrete "nothing to derive" reason;
 - `scripts/catalog_context.py`: v2 global survey;
 - `scripts/retrieve_v2.py`: v2 probe/deep;
 - `scripts/followup_check.py`: follow-up checks;
 - `scripts/review_v2.py --deep`: deep structure/fidelity/semantic review package;
 - `scripts/validate_memory.py`: failed/warnings/clean three-state validation;
-- `scripts/session_check.py`: the hard gate before answering or claiming "the archive is updated" (structure + derivation closure + v2 integrity; non-zero exit on failure);
+- `scripts/session_check.py --turn-id <turn-id>`: the hard gate before answering or claiming "the archive is updated" (receipt + structure + derivation closure + v2 integrity; non-zero exit on failure);
 - `scripts/salience_review.py`: quarterly salience review, demoting long-unconfirmed imported weights to passing level (see `references/review-and-feedback-loops.md`);
 - `scripts/record_feedback.py`: record how answers that relied on memory landed (helpful/missed/corrected); `review_v2 --deep` aggregates frequently corrected memories (see `references/review-and-feedback-loops.md`);
 - `scripts/rebuild_views.py`: rebuild legacy compatibility views and v2 derived views;
@@ -405,6 +408,7 @@ Deep review may output warnings and material gaps, but never invents lost verbat
 - permanent deletion only on the archive owner's explicit instruction;
 - legacy summaries are never deleted — marked as migration debt;
 - new profiles never overwrite old ones — version chains;
+- all writers (CLI, MCP, ledger, and rebuilds) share an inter-process lock and commit through atomic replacement; every write fresh-reads, merges, and commits inside the lock. Never overwrite another Agent/MCP writer from a stale JSON/JSONL snapshot;
 - never promote one self-assessment into a personality verdict;
 - never fabricate causal edges, merge people, or fill timeline gaps to make the graph prettier.
 

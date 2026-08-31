@@ -26,6 +26,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from backup_archive import BACKUP_DUE_DAYS, backup_age_days  # noqa: E402
 from derivation_ledger import load_ledger  # noqa: E402
+from turn_receipts import audit_turn  # noqa: E402
 
 
 def run(name: str, *args: str) -> tuple[int, dict | str]:
@@ -37,7 +38,7 @@ def run(name: str, *args: str) -> tuple[int, dict | str]:
 
 
 def pending_detail(pending_ids: list[str]) -> list[dict]:
-    """Age detail for pending captures: "current turn" cannot be expressed here, so keep leftover pending captures visible and actionable."""
+    """pending 捕获的龄期详情：无法表达"当前轮"，因此让残留 pending 可见、可处置。"""
     entries = load_ledger(ROOT)
     today = date.today()
     detail = []
@@ -60,15 +61,16 @@ def maintenance_reminders() -> dict:
         "backup": {
             "age_days": age,
             "due": age is None or age >= BACKUP_DUE_DAYS,
-            "instruction": "When the backup archive is overdue, run python scripts/backup_archive.py after the current task finishes (it re-authenticates the new archive and pushes it to the cloud); a backup is also required before migrations and after batches of important updates.",
+            "instruction": "压缩包超期时，在当前任务完成后运行 python scripts/backup_archive.py（自动认证新压缩包并推送云端）；迁移前与重要更新批次后也必须备份。",
         },
-        "feedback": "If this turn's answer relied on personal memory and the user clearly corrected or confirmed something, or pointed out a miss, call personal_add_feedback (or scripts/record_feedback.py) per references/review-and-feedback-loops.md; do not record without verbatim evidence from the user.",
+        "feedback": "本轮回答若依赖个人记忆，且用户出现明确纠正/确认或指出落空，按 references/review-and-feedback-loops.md 调用 personal_add_feedback（或 scripts/record_feedback.py）；写不出用户原话证据就不记录。",
     }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--allow-warnings", action="store_true", help="warnings are not treated as failure (by default warnings exit with code 2)")
+    ap.add_argument("--allow-warnings", action="store_true", help="警告不视为失败（默认警告退出码为 2）")
+    ap.add_argument("--turn-id", default="", help="校验当前 preflight receipt；个人 turn 未 capture/closed 时 fail closed")
     args = ap.parse_args()
     validate_code, validate = run("validate_memory.py", "--json", "--require-closed-captures")
     ledger = validate.get("derivation", {}) if isinstance(validate, dict) else {}
@@ -81,9 +83,11 @@ def main() -> int:
         "v2_archive": {"pass": v2.get("status") != "failed", "status": v2.get("status"), "errors": v2.get("errors", [])},
         "followups_due": {"count": len(followups.get("due", [])), "ids": [row.get("id") for row in followups.get("due", [])]},
     }
-    hard_fail = not gates["structure"]["pass"] or not gates["closed_captures"]["pass"] or not gates["v2_archive"]["pass"]
+    turn_gate = audit_turn(args.turn_id, ROOT) if args.turn_id else {"pass": True, "code": "not-requested"}
+    gates["turn_receipt"] = turn_gate
+    hard_fail = not gates["structure"]["pass"] or not gates["closed_captures"]["pass"] or not gates["v2_archive"]["pass"] or not turn_gate["pass"]
     warnings_present = isinstance(validate, dict) and bool(validate.get("warnings"))
-    print(json.dumps({"gate_version": "1.1.0", "hard_fail": hard_fail, "may_claim_memory_updated": not hard_fail, "gates": gates, "maintenance_reminders": maintenance_reminders()}, ensure_ascii=False, indent=2))
+    print(json.dumps({"gate_version": "2.0.0", "hard_fail": hard_fail, "may_claim_memory_updated": not hard_fail, "gates": gates, "maintenance_reminders": maintenance_reminders()}, ensure_ascii=False, indent=2))
     if hard_fail:
         return 1
     if warnings_present and not args.allow_warnings:

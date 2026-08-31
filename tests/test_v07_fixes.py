@@ -165,6 +165,13 @@ spec.loader.exec_module(m)
 m.CAPTURES = Path(r"{tmp}")
 m.ROOT = Path(r"{tmp}")
 m.register_capture = lambda *a, **k: None
+m.read_receipt = lambda *a, **k: {{
+    "requires_personal_understanding": True,
+    "message_sha256": __import__("hashlib").sha256(
+        "这是一段通过 stdin 传入的原话".encode("utf-8")
+    ).hexdigest(),
+}}
+m.mark_captured = lambda *a, **k: None
 
 class FakeProc:
     returncode = 2
@@ -174,7 +181,7 @@ class FakeProc:
 m.subprocess.run = lambda *a, **k: FakeProc()
 payload = "这是一段通过 stdin 传入的原话".encode("utf-8")
 sys.stdin = io.TextIOWrapper(io.BytesIO(payload), encoding="utf-8")
-sys.argv = ["capture_user_update.py", "--stdin", "--capture-id", "capture.test.stdin-roundtrip"]
+sys.argv = ["capture_user_update.py", "--stdin", "--capture-id", "capture.test.stdin-roundtrip", "--turn-id", "turn.test.stdin-roundtrip"]
 try:
     m.main()
 except SystemExit as exc:

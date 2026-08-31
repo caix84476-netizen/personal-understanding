@@ -7,6 +7,7 @@ import json
 import re
 from datetime import date
 from pathlib import Path
+from storage import atomic_write_text
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,9 +153,9 @@ def source_outline(path: Path, body: str, limit: int = 900) -> str:
         return ""
     blocks = [" ".join(block.split()) for block in re.split(r"\n\s*\n", body) if block.strip()]
     if len(blocks) <= 4:
-        return snippet("; ".join(blocks), limit)
+        return snippet("；".join(blocks), limit)
     selected = blocks[:2] + blocks[len(blocks) // 2 : len(blocks) // 2 + 1] + blocks[-2:]
-    return snippet("; ".join(dict.fromkeys(selected)), limit)
+    return snippet("；".join(dict.fromkeys(selected)), limit)
 
 def source_summary(path: Path) -> str:
     """Describe only the source itself, never a transitive record graph."""
@@ -165,8 +166,8 @@ def source_summary(path: Path) -> str:
     if body:
         return source_outline(path, body, 700)
     if path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
-        return "Raw image source; the matching OCR or derived records may offer a topic summary, but exact content requires reading the image back."
-    return f"Raw source: {path.name}. No sufficient derived summary yet; read the original back if needed."
+        return "图片原始来源；对应 OCR 或派生记录可能提供主题摘要，精确内容需回读图片。"
+    return f"原始来源：{path.name}。当前没有足够派生摘要，必要时需回读原文。"
 
 
 RELATION_FIELDS = ("parent_ids", "related_ids", "supports", "contradicts", "supersedes")
@@ -203,30 +204,30 @@ CATALOG_POLICY = {
 }
 
 CATALOG_DECISION_CONTRACT = {
-    "survey": "Survey the v2 timeline spine, entity catalog, context cards, current state, follow-ups, and candidate hypotheses first; the legacy record catalog serves as a compatibility index.",
-    "relevance_unit": "A unit of relevance is a context cluster, not a keyword or a single record: check topic, mood/energy, behavioral instances, current stressors, values and goals, changes over time, relationships/resources, and counterexamples separately.",
-    "irrelevant": "Exclude only when no explainable connection remains after the global map and context expansion; sensitive does not mean irrelevant.",
-    "possible": "Treat as a weak-relevance candidate: read derived summaries, relation paths, and time labels first, then decide whether to stop or escalate.",
-    "medium": "Read direct records plus a limited cross-domain context cluster; seed IDs are not the boundary of relevance.",
-    "high": "Read the derived summaries, and on demand the raw sources behind supports, contradicts, supersedes, counter-evidence, and time neighbors.",
-    "expansion": "probe expands from an event to time neighbors, entities, places, objects, and context cards; deep reads only the selected fragments and preserves fidelity.",
-    "review_trigger": "Failed verbatim captures, summary debt, misattributed people, time conflicts, due follow-ups, structural corruption, and imminent major decisions all enter v2 review.",
-    "integration_question": "For every significant experience, judge whether it changed the user's values, boundaries, costs, expectations, counterexamples, or future choices — not just record the task outcome.",
+    "survey": "先扫描 v2 时间主干、实体目录、情境卡、当前状态、待回访和候选假设；旧记录目录作为兼容索引。",
+    "relevance_unit": "相关性是一个上下文簇，不是一个关键词或单条记录：主题、情绪/能量、行为实例、当前压力、价值目标、时间变化、关系/资源和反例都要分别检查。",
+    "irrelevant": "只有在全局地图和上下文扩展后都没有可解释连接，才排除；敏感不等于无关。",
+    "possible": "进入弱相关候选，先读取派生摘要、关系路径和时间标签，再决定停止或升级。",
+    "medium": "读取直接记录及有限跨域上下文簇；种子 ID 不是相关性边界。",
+    "high": "读取派生概括，并按需读取 supports、contradicts、supersedes、反向证据和时间邻居的原始来源。",
+    "expansion": "probe 从事件发散到时间邻居、实体、地点、对象和情境卡；deep 只读取选中 fragment，并保留 fidelity。",
+    "review_trigger": "原话捕获失败、摘要债务、人物归属错误、时间冲突、待回访到期、结构损坏和临近重要决策进入 v2 审查。",
+    "integration_question": "每次重要经历都要判断它是否改变了用户的价值、边界、代价、期待、反例或未来选择，而不只记录任务结果。",
     "cross_domain_frame": [
-        "surface topic",
-        "mood and energy",
-        "behavior or self-assessment",
-        "current stressors",
-        "long-term values and goals",
-        "changes over time",
-        "counterexamples and competing explanations",
-        "cross-domain corroboration",
+        "表面主题",
+        "情绪和能量",
+        "行为或自我评价",
+        "当前压力源",
+        "长期价值与目的",
+        "时间变化",
+        "反例与竞争解释",
+        "跨领域交叉印证",
     ],
 }
 
 
 def build_catalog_header() -> dict[str, Any]:
-    """survey fast path: compute counts and the static policy only; no full record/source catalog (no hashing, no source matching)."""
+    """survey 快速路径：只算计数和静态政策，不构建记录/来源全目录（无哈希、无来源匹配）。"""
     metas: list[dict[str, str]] = []
     for path in RECORDS.glob("*.md"):
         try:
@@ -273,7 +274,7 @@ def build_catalog() -> dict[str, Any]:
                 "supersedes": split_ids(meta.get("supersedes")),
                 "source_refs": split_ids(meta.get("source_refs")),
                 "summary": snippet(row["body"], 560),
-                "boundary": "This is a derived summary and does not replace raw sources; person attribution, user corrections, and time status take priority over summary inference.",
+                "boundary": "这是派生概括，不替代原始来源；人物归属、用户纠正和时间状态优先于摘要推断。",
             }
         )
 
@@ -284,9 +285,9 @@ def build_catalog() -> dict[str, Any]:
         kind = source_type(path)
         warnings: list[str] = []
         if kind in {"image", "ocr"}:
-            warnings.append("OCR or image content may contain recognition errors; verify against the original image before exact quoting.")
+            warnings.append("OCR 或图片内容可能存在识别误差；精确引用前必须核对原图。")
         if kind == "external":
-            warnings.append("Third-party or model analysis must not be taken directly as user facts or a stable personality model.")
+            warnings.append("第三方或模型分析不能直接当作用户事实或稳定人格模型。")
         ocr_path = None
         if kind == "image":
             candidate = SOURCES / "ocr" / f"{path.stem}.md"
@@ -351,7 +352,7 @@ def build_catalog() -> dict[str, Any]:
         "current": [survey_record(item) for item in current],
         "history": [survey_record(item, HISTORY_SUMMARY_LIMIT) for item in history],
         "counts": {"current": len(current), "history": len(history)},
-        "note": "The global survey map provides only short derived summaries and relation hints, not raw source bodies; it is a global scan, not the final relevance ruling.",
+        "note": "全局勘察地图只提供派生短摘要和关系提示，不包含原始来源正文；它是全局扫描，不是最终相关性裁决。",
     }
     return catalog
 
@@ -409,7 +410,7 @@ def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4)
     if by_domain:
         domains.append({
             "id": "domain.unclassified",
-            "summary": "Current records, not yet classified, that may still influence personal decisions.",
+            "summary": "未归类但可影响个人决策的当前记录。",
             "records": [{**item, "summary": snippet(item.get("summary", ""), SURVEY_SUMMARY_LIMIT)} for item in sorted((item for rows in by_domain.values() for item in rows), key=score, reverse=True)],
         })
 
@@ -422,32 +423,32 @@ def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4)
         "counts": catalog["counts"],
         "survey": catalog.get("survey", {}),
         "domains": domains,
-        "routing_note": "This is the global survey view, not automatic retrieval results. The model browses the current map and the history index first, then picks records for probe/deep.",
+        "routing_note": "这是全局勘察视图，不是自动检索结果。模型先浏览当前地图和历史索引，再选择 probe/deep 记录。",
     }
 
 
 def write_catalog(catalog: dict[str, Any]) -> None:
-    CATALOG_JSON.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(CATALOG_JSON, json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
     lines = [
-        "# Personal memory catalog",
+        "# 个人资料目录",
         "",
-        "Generated by `scripts/rebuild_views.py`; this file is a global survey and audit view — the source of truth remains the records and raw sources.",
+        "由 `scripts/rebuild_views.py` 生成；本文件是全局勘察与审计视图，事实来源仍回到记录和原文。",
         "",
-        f"Catalog version: `{catalog['catalog_version']}`; {catalog['counts']['records']} records; {catalog['counts']['sources']} sources; {catalog['counts']['branches']} branches.",
+        f"目录版本：`{catalog['catalog_version']}`；记录 {catalog['counts']['records']} 条；来源 {catalog['counts']['sources']} 个；分支 {catalog['counts']['branches']} 个。",
         "",
-        "## Derived records",
+        "## 派生记录",
         "",
     ]
     for item in catalog["records"]:
         summary = item.get("summary", "").replace("\n", " ")
         lines.append(f"- `{item['id']}` [{item.get('kind')}, {item.get('status')}] {summary}")
-    lines.extend(["", "## Raw source summaries", ""])
+    lines.extend(["", "## 原始来源级摘要", ""])
     for item in catalog["sources"]:
-        warnings = "; ".join(item.get("warnings", []))
-        suffix = f"; note: {warnings}" if warnings else ""
+        warnings = "；".join(item.get("warnings", []))
+        suffix = f"；注意：{warnings}" if warnings else ""
         lines.append(f"- `{item['path']}` [{item['source_type']}] {item['summary']}{suffix}")
-    lines.extend(["", "## Usage boundaries", "", "survey first shows the current map and the history index; probe reads derived summaries; deep reads raw sources only for evidence verification.", ""])
-    CATALOG_MD.write_text("\n".join(lines), encoding="utf-8")
+    lines.extend(["", "## 使用边界", "", "survey 先展示当前地图和历史索引；probe 读取派生概括；deep 仅在证据核验时回读原始来源。", ""])
+    atomic_write_text(CATALOG_MD, "\n".join(lines))
 
 
 
