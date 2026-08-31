@@ -23,6 +23,8 @@ Before invoking this skill, classify the request. If it is primarily technical �
 
 Use this skill only when the request contains personal material, the user explicitly asks to remember or archive it, or personal context would materially change the recommendation, tradeoff, warning, or action order. A request to maintain this skill's boundaries is not itself personal material; update the skill rules without archiving the maintenance conversation.
 
+Global conversation style, coding-language preferences, tool preferences, and planning/interview behavior belong in the host client's instruction file, not in this personal archive. This skill must not capture or derive those client-configuration decisions as personal facts.
+
 ## Highest priority: verbatim fidelity
 
 **Whenever the user adds content that belongs in the Personal Understanding skill — in any form, in any scenario — the complete user message must be saved verbatim, character for character, before any summarizing, event splitting, person extraction, relationship judgment, or causal interpretation.**
