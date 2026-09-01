@@ -9,6 +9,8 @@ Idempotent: existing files are never touched. Safe to run repeatedly.
 from __future__ import annotations
 
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +48,11 @@ def main() -> int:
             print("  +", entry)
     else:
         print("init_archive: archive skeleton already present; nothing changed.")
+    # Build the v2 views (manifest, catalog, current state) so validate_memory
+    # reports "clean" on a brand-new archive instead of missing-manifest failed.
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "rebuild_views.py")], cwd=ROOT)
+    if proc.returncode != 0:
+        print("init_archive: warning — rebuild_views.py failed; run it manually once.")
     print("next: python scripts/install_mcp.py --auto   (then restart your client session)")
     return 0
 
