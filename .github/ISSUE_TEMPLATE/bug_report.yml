@@ -1,0 +1,48 @@
+name: Bug report
+description: Something broke while running personal-understanding
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please **do not paste personal archive data**
+        (verbatim captures, records, memory files) — redact anything about yourself first.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Content of the VERSION file, or output of `pip show personal-understanding`
+      placeholder: "2.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Where does it run?
+      options:
+        - Claude Code
+        - Codex
+        - Other MCP client
+        - Direct CLI (python scripts/...)
+        - Dashboard
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, expected vs actual behavior. No personal data, please.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Tool stderr/stdout or the relevant log tail. Redact anything personal.

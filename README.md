@@ -120,7 +120,7 @@ python scripts/open_dashboard.py                # Windows: double-click open-das
 
 **Requirements:** Python 3.10+ · stdlib only, zero pip installs · Windows / macOS / Linux.
 
-**Prefer pip?** The MCP server + installer are also on [PyPI](https://pypi.org/project/personal-understanding/): `pip install personal-understanding`, then `personal-understanding-install` to register the local MCP server. The pip package ships the Python side only — for the full skill brain (`SKILL.md` + dashboard), use the clone steps above.
+**Prefer pip?** The MCP server + installer are also on [PyPI](https://pypi.org/project/personal-understanding/): `pip install personal-understanding`, then `personal-understanding-install` to register the local MCP server. The pip package ships the Python side only — for the full skill brain (`SKILL.md` + dashboard), use the clone steps above. **Until 2.2.1 the pip route is experimental:** the 2.2.0 wheel was built from a stale snapshot (the packaged server predates the receipt/concurrency hardening) and `personal-understanding-install` does not bootstrap an archive root yet. Source install is the reliable path for now.
 
 Then just talk normally: *"I've been feeling…"*, *"remember that…"*, *"why do I keep…"* — the skill's description triggers on personal content, captures your words, and takes over from there. Ask *"what do you remember about…"*, or *"where does that come from?"* and follow the evidence chain.
 
