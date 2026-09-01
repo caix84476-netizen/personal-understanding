@@ -34,9 +34,10 @@ def main() -> int:
     missing = REQUIRED_SKILL_FIELDS - meta.keys()
     if missing: errors.append(f"SKILL.md missing frontmatter: {sorted(missing)}")
     if meta.get("name") != "personal-understanding": errors.append("SKILL.md name must be personal-understanding")
-    if meta.get("version") != "2.1.0": errors.append("SKILL.md version must be 2.1.0")
     version_file = ROOT / "VERSION"
-    if not version_file.exists() or version_file.read_text(encoding="utf-8").strip() != "2.1.0": errors.append("VERSION must be 2.1.0")
+    expected_version = version_file.read_text(encoding="utf-8").strip() if version_file.exists() else ""
+    if not expected_version: errors.append("VERSION file missing or empty")
+    if meta.get("version") != expected_version: errors.append(f"SKILL.md version ({meta.get('version')}) must match VERSION ({expected_version or 'missing'})")
     branches_dir = ROOT / "memory" / "branches"; branch_ids: set[str] = set()
     if not branches_dir.is_dir(): errors.append("missing directory: memory/branches")
     else:
@@ -96,7 +97,7 @@ def main() -> int:
             warnings.append(rendered)
     warnings = list(dict.fromkeys(warnings)); errors = list(dict.fromkeys(errors))
     status = "failed" if errors else ("warnings" if warnings else "clean")
-    result = {"version": "2.1.0", "status": status, "records": len(records), "unique_ids": len(ids), "errors": errors, "warnings": warnings, "v2": v2, "derivation": derivation}
+    result = {"version": expected_version, "status": status, "records": len(records), "unique_ids": len(ids), "errors": errors, "warnings": warnings, "v2": v2, "derivation": derivation}
     if args.json: print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         if errors: print("Validation failed")
