@@ -17,3 +17,9 @@ _tmp_*
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Python packaging artifacts
+build/
+dist/
+*.whl
+*.tar.gz
