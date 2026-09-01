@@ -6,6 +6,11 @@
 
 **Verbatim-first · Evidence-chain · Anti-fabrication · Local-first · One folder, zero dependencies**
 
+[![PyPI](https://img.shields.io/pypi/v/personal-understanding)](https://pypi.org/project/personal-understanding/)
+[![Python](https://img.shields.io/pypi/pyversions/personal-understanding)](https://pypi.org/project/personal-understanding/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/caix84476-netizen/personal-understanding?style=social)](https://github.com/caix84476-netizen/personal-understanding/stargazers)
+
 [中文文档](README.zh-CN.md) · [架构](#architecture) · [快速开始](#quick-start) · [设计原则](#design-principles)
 
 > **Two skill languages:** the repo ships **`SKILL.md`** (English) and **`SKILL.zh-CN.md`** (中文) — two brains, one shared bilingual engine. Install either by renaming it to `SKILL.md` in your skills folder. 中文用户可直接用 `SKILL.zh-CN.md`，配合中文档案效果最佳。
@@ -115,6 +120,8 @@ python scripts/open_dashboard.py                # Windows: double-click open-das
 
 **Requirements:** Python 3.10+ · stdlib only, zero pip installs · Windows / macOS / Linux.
 
+**Prefer pip?** The MCP server + installer are also on [PyPI](https://pypi.org/project/personal-understanding/): `pip install personal-understanding`, then `personal-understanding-install` to register the local MCP server. The pip package ships the Python side only — for the full skill brain (`SKILL.md` + dashboard), use the clone steps above.
+
 Then just talk normally: *"I've been feeling…"*, *"remember that…"*, *"why do I keep…"* — the skill's description triggers on personal content, captures your words, and takes over from there. Ask *"what do you remember about…"*, or *"where does that come from?"* and follow the evidence chain.
 
 ## Your data stays yours
@@ -140,7 +147,7 @@ Not a framework thought up in one afternoon — a working archive refined throug
 
 ## Status
 
-- **Current release: v2.1.0** — schema stable (`memory/v2/` v2.0.0), actively maintained.
+- **Current release: v2.2.0** — schema stable (`memory/v2/` v2.0.0), actively maintained. Also on [PyPI](https://pypi.org/project/personal-understanding/).
 - Works with any MCP-capable client; the skill itself works in **any language** (English by default — it mirrors yours).
 - Roadmap: editable dashboard pages, richer cold-recall ranking, optional encrypted archive-at-rest.
 

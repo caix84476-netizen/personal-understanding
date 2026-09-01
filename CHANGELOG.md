@@ -5,7 +5,9 @@ The project is developed as a working, daily-driven archive — many entries bel
 were motivated by real incidents found during use, which is exactly why the
 hardening exists.
 
-## Unreleased — main branch hardening
+## 2.2.0 — 2026-09-01 — main branch hardening
+
+> First release published to [PyPI](https://pypi.org/project/personal-understanding/) as `personal-understanding`.
 
 - Added content-first, immutable turn receipts so personal material cannot be skipped just because it is framed as rewriting, translation, summarization, or image review.
 - Bound capture, finalization, and `session_check --turn-id` to the receipt hash and made incomplete personal turns fail closed.

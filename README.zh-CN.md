@@ -6,6 +6,11 @@
 
 **原话优先 · 证据链 · 反编造 · 本地优先 · 一个文件夹，零依赖**
 
+[![PyPI](https://img.shields.io/pypi/v/personal-understanding)](https://pypi.org/project/personal-understanding/)
+[![Python](https://img.shields.io/pypi/pyversions/personal-understanding)](https://pypi.org/project/personal-understanding/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/caix84476-netizen/personal-understanding?style=social)](https://github.com/caix84476-netizen/personal-understanding/stargazers)
+
 [English](README.md) · [架构](#架构) · [快速开始](#快速开始) · [设计原则](#设计原则)
 
 > **两套语言大脑**：仓库同时提供 **`SKILL.md`**（英文版）和 **`SKILL.zh-CN.md`**（中文版，即本项目的中文原始版本）——一个共享的双语引擎，两种大脑。安装时把选中的那个改名为 `SKILL.md` 放进 skills 目录即可。中文用户建议直接用 `SKILL.zh-CN.md`。
@@ -113,6 +118,8 @@ python scripts/open_dashboard.py                # Windows：双击 open-dashboar
 
 **环境要求：** Python 3.10+ · 仅标准库，零 pip 依赖 · Windows / macOS / Linux。
 
+**偏好 pip？** MCP 服务和安装器也发布在 [PyPI](https://pypi.org/project/personal-understanding/)：`pip install personal-understanding`，然后运行 `personal-understanding-install` 注册本地 MCP 服务。（pip 包只含 Python 侧；完整的 skill 大脑——`SKILL.md` + 面板——请用上面的 clone 步骤。）
+
 然后正常聊天就行："我最近……"、"记住一下……"、"为什么我总是……"——skill 的描述会在个人内容上自动触发，捕获你的原话后接管流程。也可以问"你还记得关于……的事吗"、"这个结论是哪来的"，顺着证据链走。
 
 ## 你的数据归你
@@ -138,7 +145,7 @@ python scripts/open_dashboard.py                # Windows：双击 open-dashboar
 
 ## 状态
 
-- **当前版本：v2.1.0**——schema 稳定（`memory/v2/` v2.0.0），持续维护。
+- **当前版本：v2.2.0**——schema 稳定（`memory/v2/` v2.0.0），持续维护。[PyPI](https://pypi.org/project/personal-understanding/) 同步发布。
 - 兼容任何支持 MCP 的客户端；skill 本身**不限语言**（默认英文，跟随你的语言）。
 - 路线图：面板可编辑化、更精细的冷回溯排序、可选的静态加密归档。
 
