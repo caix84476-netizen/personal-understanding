@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.1 — 2026-09-02 — installability and recovery hardening
+
+- `validate_memory.py` derives the expected version from the `VERSION` file instead of hardcoding it (2.2.0 installs failed validation out of the box).
+- `init_archive.py` builds v2 views during bootstrap so a fresh archive validates clean.
+- `restore_stable.py`: scoped recovery from the stable zip (code/data/all, dry-run default, sha-256 verified, pre-restore snapshot).
+- Added `glama.json` and a `Dockerfile` for the Glama MCP directory (install + security scan).
+- CI (GitHub Actions matrix), issue templates, and a repo version-sync test.
+
+
 All notable changes to Personal Understanding are documented here.
 The project is developed as a working, daily-driven archive — many entries below
 were motivated by real incidents found during use, which is exactly why the

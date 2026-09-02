@@ -604,8 +604,16 @@ def build_archive() -> dict[str, Any]:
 
 def skill_version() -> str:
     try:
-        return (ROOT / "VERSION").read_text(encoding="utf-8").strip() or V2_VERSION
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        if version:
+            return version
     except OSError:
+        pass
+    try:
+        # pip 安装为包时没有 VERSION 文件，读包元数据拿到真实版本（如 2.2.1）
+        from importlib.metadata import version as _pkg_version
+        return _pkg_version("personal-understanding")
+    except Exception:
         return V2_VERSION
 
 

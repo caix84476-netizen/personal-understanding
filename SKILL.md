@@ -1,6 +1,6 @@
 ---
 name: personal-understanding
-version: 2.2.0
+version: 2.2.1
 description: Use when the user talks about their own experiences, states, feelings, family, friends, school, or decisions; asks to remember, correct, or recall something about themselves; or asks "why am I like this?". The user's exact words are always saved first as an immutable verbatim capture, then retrieval proceeds progressively — timeline survey → entity/context probe → verbatim deep — like human recall: gist first, verification later. Works in English by default and mirrors the user's language.
 ---
 
