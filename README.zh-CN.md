@@ -118,7 +118,7 @@ python scripts/open_dashboard.py                # Windows：双击 open-dashboar
 
 **环境要求：** Python 3.10+ · 仅标准库，零 pip 依赖 · Windows / macOS / Linux。
 
-**偏好 pip？** MCP 服务和安装器也发布在 [PyPI](https://pypi.org/project/personal-understanding/)：`pip install personal-understanding`，然后运行 `personal-understanding-install` 注册本地 MCP 服务。（pip 包只含 Python 侧；完整的 skill 大脑——`SKILL.md` + 面板——请用上面的 clone 步骤。）**2.2.1 之前 pip 路线属实验性**：2.2.0 的 wheel 构建自一个过期快照（包内服务器早于 receipt/并发硬化），且 `personal-understanding-install` 尚未实现档案根目录引导。现阶段请优先使用上面的 clone 安装。
+**偏好 pip？** MCP 服务和安装器也发布在 [PyPI](https://pypi.org/project/personal-understanding/)：`pip install personal-understanding`，然后运行 `personal-understanding-install` 注册本地 MCP 服务。（pip 包只含 Python 侧；完整的 skill 大脑——`SKILL.md` + 面板——请用上面的 clone 步骤。）**自 2.2.1 起 wheel 不再是过期快照**——包内 37 个文件与源码 `scripts/` 逐字节一致。仍有一处限制：`personal-understanding-install` 只注册服务、不引导档案根目录，从零开始请先运行 `python -m personal_understanding.init_archive`。需要完整 skill 大脑仍推荐上面的 clone 步骤。
 
 然后正常聊天就行："我最近……"、"记住一下……"、"为什么我总是……"——skill 的描述会在个人内容上自动触发，捕获你的原话后接管流程。也可以问"你还记得关于……的事吗"、"这个结论是哪来的"，顺着证据链走。
 
@@ -145,7 +145,7 @@ python scripts/open_dashboard.py                # Windows：双击 open-dashboar
 
 ## 状态
 
-- **当前版本：v2.2.0**——schema 稳定（`memory/v2/` v2.0.0），持续维护。[PyPI](https://pypi.org/project/personal-understanding/) 同步发布。
+- **当前版本：v2.2.1**——schema 稳定（`memory/v2/` v2.0.0），持续维护。[PyPI](https://pypi.org/project/personal-understanding/) 同步发布。
 - 兼容任何支持 MCP 的客户端；skill 本身**不限语言**（默认英文，跟随你的语言）。
 - 路线图：面板可编辑化、更精细的冷回溯排序、可选的静态加密归档。
 
