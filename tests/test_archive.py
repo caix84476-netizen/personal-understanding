@@ -77,9 +77,21 @@ class ArchiveV2Tests(unittest.TestCase):
         self.assertTrue(timeline_text.strip(), "legacy timeline view must not be empty")
 
     def test_v2_policy_surface_is_complete(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        for phrase in ("verbatim fidelity", "memory-weight axis", "Entity profiles", "Context cards", "Follow-ups and proactive check-ins", "causal interpretation layer", "Deep review and structural validation"):
-            self.assertIn(phrase, skill)
+        # 中英双语兼容：SKILL.md 与 SKILL.zh-CN.md 按各自语言断言对应标题。
+        for name in ("SKILL.md", "SKILL.zh-CN.md"):
+            path = ROOT / name
+            if not path.exists():
+                continue
+            skill = path.read_text(encoding="utf-8")
+            is_en = "Personal Understanding v2.0" in skill
+            is_zh = "个人理解 v2.0" in skill
+            if is_en:
+                for phrase in ("verbatim fidelity", "memory-weight axis", "Entity profiles", "Context cards", "Follow-ups and proactive check-ins", "causal interpretation layer", "Deep review and structural validation"):
+                    self.assertIn(phrase, skill)
+            if is_zh:
+                for phrase in ("原话保真", "统一记忆权重", "实体档案", "情境卡", "待办与主动回访", "因果解释层", "深度审查和结构校验"):
+                    self.assertIn(phrase, skill)
+            self.assertTrue(is_en or is_zh, f"{name} has neither EN nor ZH v2 header")
         for name in ("architecture-v2.md", "capture-and-verbatim-policy.md", "timeline-and-followup-policy.md", "entity-and-context-policy.md", "causal-hypothesis-policy.md"):
             self.assertTrue((ROOT / "references" / name).exists(), name)
 

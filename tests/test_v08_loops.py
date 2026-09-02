@@ -195,7 +195,14 @@ class ColdRecallWindowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertTrue(data["timeline"])
-        self.assertTrue(all(str(row.get("date_start", "")).startswith(month) for row in data["timeline"]))
+        # Window semantics are interval-overlap: a spanning entry active in the
+        # window must match even if it starts in an earlier month.
+        lo, hi = f"{month}-01", f"{month}-31"
+        def overlaps(row: dict) -> bool:
+            start = str(row.get("date_start") or "")
+            end = str(row.get("date_end") or start)
+            return bool(start) and start <= hi and end >= lo
+        self.assertTrue(all(overlaps(row) for row in data["timeline"]))
 
 
 if __name__ == "__main__":

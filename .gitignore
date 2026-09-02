@@ -2,17 +2,20 @@
 memory/
 sources/
 backups/
+logs/
 memory/backup-config.json
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
+.pytest_cache/
 
 # Local tooling output
 *.out
 _tmp_*
 *.tmp
+*.bak-*
 
 # OS noise
 .DS_Store

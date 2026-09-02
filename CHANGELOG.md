@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 2026-09-03 — mass-deletion incident hardening
+
+- `hot_mirror.py` hot-mirror watchdog: mirrors the skills tree every 15 minutes and auto-restores from the mirror the moment a mass deletion is detected (live state-file count collapses below 60% of the mirror). Sandbox `--selftest` covers mirror, idempotent cycle, and simulated wipe; deployed via a Startup VBS.
+- `scripts/daily-backup.cmd` plus a real Task Scheduler task ("PersonalUnderstanding Daily Backup", 12:30 daily; previously blocked by antivirus HIPS, now created and test-run successfully).
+- Test fixes found during a full drill: `test_v08_loops` window-range assertion now matches the intended interval-overlap semantics; the SKILL surface test detects per-file language instead of assuming one language. Suite: 92/92.
+- Repo/body convergence: repo packaging and community files (pyproject, CI, LICENSE, templates, zh-CN docs, issue templates) synced into the local body; watchdog and backup scripts synced into the repo; union `.gitignore`.
+
 ## 2.2.1 — 2026-09-02 — installability and recovery hardening
 
 - `validate_memory.py` derives the expected version from the `VERSION` file instead of hardcoding it (2.2.0 installs failed validation out of the box).
