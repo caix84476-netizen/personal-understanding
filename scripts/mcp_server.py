@@ -9,6 +9,10 @@ from derivation_ledger import audit_ledger, discover_captures, finalize_capture,
 from v2_archive import skill_version, write_text_atomic
 from storage import atomic_write_bytes, atomic_write_text, mutation_lock
 from turn_receipts import create_receipt, mark_captured, read_receipt
+from cli_runtime import configure_utf8_stdio
+
+# MCP frames are UTF-8 JSON-RPC by spec; never trust the console code page (GBK/cp1252).
+configure_utf8_stdio()
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"

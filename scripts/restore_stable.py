@@ -36,6 +36,11 @@ import sys
 import zipfile
 from pathlib import Path
 
+try:
+    from cli_runtime import configure_utf8_stdio; configure_utf8_stdio()
+except ImportError:
+    pass
+
 ROOT = Path(__file__).resolve().parents[1]
 BACKUPS = ROOT / "backups"
 STABLE_ZIP = BACKUPS / "personal-understanding-stable.zip"

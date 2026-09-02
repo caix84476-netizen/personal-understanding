@@ -29,6 +29,11 @@ DIRS = (
 )
 
 
+try:
+    from cli_runtime import configure_utf8_stdio; configure_utf8_stdio()
+except ImportError:
+    pass
+
 def main() -> int:
     created: list[str] = []
     for rel in DIRS:
