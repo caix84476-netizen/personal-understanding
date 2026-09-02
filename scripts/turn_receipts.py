@@ -47,7 +47,7 @@ def create_receipt(text: str, *, turn_id: str | None = None, conversation_id: st
             if old.get("message_sha256") != digest: raise ValueError("同一 turn_id 不能对应不同用户消息")
             return old
         decision = classify_personal_turn(text)
-        receipt = {"schema_version": "1.0.0", "turn_id": turn_id, "created_at": now_iso(), "conversation_id": conversation_id or None, "message_sha256": digest, **decision, "capture_id": None, "capture_status": "required" if decision["requires_personal_understanding"] else "not-required", "closure_status": "required" if decision["requires_personal_understanding"] else "not-required"}
+        receipt = {"schema_version": "1.1.0", "turn_id": turn_id, "created_at": now_iso(), "conversation_id": conversation_id or None, "message_sha256": digest, **decision, "capture_id": None, "capture_ids": [], "capture_status": "required" if decision["requires_personal_understanding"] else "not-required", "closure_status": "required" if decision["requires_personal_understanding"] else "not-required"}
         _write(receipt, root); return receipt
 
 def mark_captured(turn_id: str, capture_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any]:
@@ -55,15 +55,22 @@ def mark_captured(turn_id: str, capture_id: str, root: Path = DEFAULT_ROOT) -> d
         receipt = read_receipt(turn_id, root)
         if not receipt: raise ValueError("turn receipt 不存在；必须先运行 preflight")
         if not receipt.get("requires_personal_understanding"): raise ValueError("本 turn 不应写入个人档案")
-        if receipt.get("capture_id") not in {None, capture_id}: raise ValueError("一个 turn 只能绑定一个 immutable capture")
-        receipt.update({"capture_id": capture_id, "capture_status": "captured", "closure_status": "pending", "captured_at": now_iso()})
+        # 一个 turn 可绑定多个 immutable capture（正文 + N 个附件是同一轮对话的常态）。
+        ids = list(receipt.get("capture_ids") or [])
+        first = receipt.get("capture_id")
+        if first and first not in ids:
+            ids.insert(0, first)
+        if capture_id not in ids:
+            ids.append(capture_id)
+        receipt.update({"capture_id": ids[0], "capture_ids": ids, "capture_status": "captured", "closure_status": "pending", "captured_at": now_iso()})
         _write(receipt, root); return receipt
 
 def mark_closed_for_capture(capture_id: str, status: str, root: Path = DEFAULT_ROOT) -> None:
     with mutation_lock(root):
         for path in receipt_dir(root).glob("*.json"):
             receipt = read_receipt(path.stem, root)
-            if receipt and receipt.get("capture_id") == capture_id:
+            ids = set(receipt.get("capture_ids") or []) | {receipt.get("capture_id")}
+            if receipt and capture_id in ids:
                 receipt.update({"closure_status": status, "closed_at": now_iso()}); _write(receipt, root)
 
 def audit_turn(turn_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any]:

@@ -4,6 +4,7 @@
 
 - `hot_mirror.py` hot-mirror watchdog: mirrors the skills tree every 15 minutes and auto-restores from the mirror the moment a mass deletion is detected (live state-file count collapses below 60% of the mirror). Sandbox `--selftest` covers mirror, idempotent cycle, and simulated wipe; deployed via a Startup VBS.
 - `scripts/daily-backup.cmd` plus a real Task Scheduler task ("PersonalUnderstanding Daily Backup", 12:30 daily; previously blocked by antivirus HIPS, now created and test-run successfully).
+- Turn receipts support multiple immutable captures per turn (`capture_ids`): a user turn containing text plus N photos no longer dies on the second capture — the exact 08-29 scenario. Found and fixed by the dummy-data release-gate pipeline; gate 3/3 green.
 - Test fixes found during a full drill: `test_v08_loops` window-range assertion now matches the intended interval-overlap semantics; the SKILL surface test detects per-file language instead of assuming one language. Suite: 92/92.
 - Repo/body convergence: repo packaging and community files (pyproject, CI, LICENSE, templates, zh-CN docs, issue templates) synced into the local body; watchdog and backup scripts synced into the repo; union `.gitignore`.
 
