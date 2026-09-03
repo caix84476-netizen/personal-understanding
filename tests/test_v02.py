@@ -16,7 +16,8 @@ class V2ArchitectureTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPTS / name), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     def test_preflight_is_model_router_with_v2_scheduler(self):
-        result = self.run_script("preflight_context.py", "我感觉有点焦虑")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_script("preflight_context.py", "我感觉有点焦虑", "--root", tmp)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(data["activation"]["mode"], "model-decision")
@@ -26,7 +27,8 @@ class V2ArchitectureTests(unittest.TestCase):
         self.assertNotIn("core", data)
 
     def test_short_interjection_still_has_v2_route(self):
-        result = self.run_script("preflight_context.py", "唉")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_script("preflight_context.py", "唉", "--root", tmp)
         data = json.loads(result.stdout)
         self.assertEqual(data["preflight"]["mode"], "low-information")
         self.assertEqual(data["activation"]["mode"], "model-decision")

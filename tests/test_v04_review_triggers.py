@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,7 +17,8 @@ class ReviewTriggerV2Tests(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPTS / name), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     def test_preflight_reports_review_alert_on_correction(self):
-        result = self.run_script("preflight_context.py", "普通任务", "--immediate-reason", "correction")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_script("preflight_context.py", "普通任务", "--immediate-reason", "correction", "--root", tmp)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertTrue(data["auto_review"]["triggered"])
@@ -24,7 +26,8 @@ class ReviewTriggerV2Tests(unittest.TestCase):
         self.assertIn("alerts", data["auto_review"])
 
     def test_preflight_without_trigger_does_not_emit_alert(self):
-        result = self.run_script("preflight_context.py", "普通技术问题")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_script("preflight_context.py", "普通技术问题", "--root", tmp)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertFalse(data["auto_review"]["triggered"])

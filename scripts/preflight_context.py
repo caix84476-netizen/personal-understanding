@@ -30,12 +30,14 @@ def main() -> int:
     ap.add_argument("--conversation-id", default="")
     ap.add_argument("--budget", type=int, default=4000, help="兼容旧调用；不影响 receipt")
     ap.add_argument("--immediate-reason", choices=["correction", "attribution", "privacy", "structure", "compression", "decision"])
+    ap.add_argument("--root", default="", help="归档根目录覆盖（测试/沙箱用；缺省为仓库根）")
     args = ap.parse_args()
     source_count = int(args.text is not None) + int(bool(args.file)) + int(bool(args.stdin))
     if source_count != 1:
         ap.error("必须且只能提供 text、--file 或 --stdin 之一")
     text = _read(args)
-    receipt = create_receipt(text, turn_id=args.turn_id or None, conversation_id=args.conversation_id or None, root=ROOT)
+    root = Path(args.root) if args.root else ROOT
+    receipt = create_receipt(text, turn_id=args.turn_id or None, conversation_id=args.conversation_id or None, root=root)
     required = bool(receipt["requires_personal_understanding"])
     low_information = len(text.strip()) <= 2
     review_alert = {"triggered": bool(args.immediate_reason), "reason": args.immediate_reason or "not-due"}
