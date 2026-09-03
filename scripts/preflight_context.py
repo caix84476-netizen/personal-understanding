@@ -27,7 +27,7 @@ def main() -> int:
     source.add_argument("--file", help="UTF-8 完整用户消息文件")
     source.add_argument("--stdin", action="store_true", help="从 stdin 读取完整用户消息")
     ap.add_argument("--turn-id", default="", help="可复用的当前 turn 标识；同一 ID 不得对应不同消息")
-    ap.add_argument("--tier", choices=["auto", "full", "light", "skip"], default="auto", help="模型对三档调用逻辑的显式声明：light=轻量补记；full=完整档兜底；skip=明确跳过；auto=纯内容分类")
+    ap.add_argument("--tier", choices=["auto", "full", "light", "skip"], default="auto", help="两档调用的显式声明：full=完整档（含活动足迹轮次）；skip=明确跳过；auto=纯内容分类。light 已废弃（两档制改革），传入时按 full 处理")
     ap.add_argument("--conversation-id", default="")
     ap.add_argument("--budget", type=int, default=4000, help="兼容旧调用；不影响 receipt")
     ap.add_argument("--immediate-reason", choices=["correction", "attribution", "privacy", "structure", "compression", "decision"])

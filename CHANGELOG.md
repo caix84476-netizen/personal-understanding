@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.0 — 2026-09-03 — two-tier reform: light tier merged into full
+
+- 两档制改革（当日实测驱动）：轻量补记档（light）废除，活动足迹轮次并入完整档，受"足迹纪律"约束——写入前定向查重（防盲写，当日"已入学"误记的制度根源）、恰好一条 tier=light/salience 0–1 微型记录、查重零新增以 no-derivation-needed 体面收场（reason 须写明命中记录）、矛盾留证不断言。废除理由：免读取省下的少量 token 低于其引入的复杂度与事故率（盲写误记、查重死锁、回答无法利用档案背景）。
+- `scripts/turn_receipts.py`：删除 `light-tier-requires-derived-record` 闸门（与"写入前查重"组合会产生"查重说别写、闸门说必须写"的死锁，实测复现于碎钉足球鞋场景）；`classify_personal_turn` 收到 tier=light 一律映射为 full（枚举仅为兼容保留）；signal 不再产生 personal-light。
+- 查重工具指引：定向查重以 routing 视图为主入口（retrieve_v2 probe 对短词游戏名等查询存在漏召回，实测"只狼"场景 probe 未命中而 routing 命中）。
+- 文档同步：SKILL.md 与 zh-CN 镜像同步两档制；README/zh-CN 当前版本声明更新；mcp_server 工具描述（preflight/finalize/add_record）同步两档语义，add_record 的记录层 tier=light 微型标记保留。
+
 ## 2.3.1 — 2026-09-03 — three-tier audit hardening
 
 - Skip 声明留痕：`classify_personal_turn` 在 tier=skip 压制内容分类检出时，把被压掉的原始 reasons 保留进 receipt 新字段 `reasons_suppressed`——"内容判了个人却被声明 skip"从此可事后审计，不再只留当轮 stdout。
