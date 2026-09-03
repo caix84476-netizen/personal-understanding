@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.1 — 2026-09-03 — three-tier audit hardening
+
+- Skip 声明留痕：`classify_personal_turn` 在 tier=skip 压制内容分类检出时，把被压掉的原始 reasons 保留进 receipt 新字段 `reasons_suppressed`——"内容判了个人却被声明 skip"从此可事后审计，不再只留当轮 stdout。
+- 轻量档空闭环闸门：`audit_turn` 对 tier=light 且 closure_status=no-derivation-needed 的 receipt fail closed（`light-tier-requires-derived-record`）——文档承诺的"要么一条微型记录闭环，要么不该声明 light"从纯自觉升级为闸门强制；完整档的 no-derivation-needed（低信号快速通道）不受影响。
+- 文档三处修订（SKILL.md 与 zh-CN 镜像同步）：档位升级必须换新 turn_id（同 turn_id 换档被幂等缓存吞掉、skip receipt 拒绝 capture）；skip 护栏条款（内容已检出个人材料的轮次禁止声明 skip）；消除"no-derivation-needed 之外的裁量空间"歧义句。`personal_finalize_capture` 工具描述同步轻量档限制。
+
+## 2.3.0 — 2026-09-03 — three-tier invocation (full/light/skip)
+
+- 三档调用闸门重构：完整档 full（含抒发/闲聊，全流程）/ 轻量补记档 light（模型显式声明，capture 原话 + 恰好一条 salience 0–1 微型记录）/ 跳过档 skip（零接触）。设计原则：不扩充关键词自动检测，边界由模型具体问题具体分析。
+- `scripts/turn_receipts.py`：`classify_personal_turn(text, tier)` 新增 tier 参数，receipt schema 1.1.1 含 tier 字段；light 强制 required（signal=personal-light），skip 强制清空。
+- `scripts/mcp_server.py`：`personal_preflight_turn` inputSchema 加 tier 枚举；`personal_add_record` 加 tier 字段（full/light），tier=light 且 salience>1 拒绝写入，frontmatter 落盘 `tier:`。
+- `scripts/v2_archive.py`：timeline entry 与 knowledge card 贯通 tier 字段（缺省 full）；entities/fragments 不携带（实体与原话无档位语义）。
+- `SKILL.md`/`SKILL.zh-CN.md`/宿主 AGENTS.md 重写调用闸门为三档；版本四处同步（SKILL.md、SKILL.zh-CN.md、VERSION、pyproject）。
+
 ## 2.2.2 — 2026-09-03 — incident hardening, attachment restoration, protocol fix
 
 - Attachment restoration: every incident-lost original recovered and re-captured under its original capture ID with sha256-verified provenance — 3 selfies (08-29), teeth photo, essay screenshot, gaokao note screenshot, barbershop mirror selfie (08-30), canon sports-meet photo (IMG_20241110); the 2024-03-02 essay's full 234-character text was re-transcribed from its recovered screenshot into the record.

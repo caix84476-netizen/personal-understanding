@@ -1,6 +1,6 @@
 ---
 name: personal-understanding
-version: 2.3.0
+version: 2.3.1
 description: 三档调用。①完整档：当用户谈及自己的经历、状态、感受、家人朋友、学校、决定、长期偏好，或要求记住、纠正关于他本人的信息，或问"我为什么会这样"，包括抒发和闲聊——先以不可变原话保存，再沿"时间主干 survey → 实体/情境 probe → 原话 deep"渐进检索；②轻量补记档：游戏攻略、宿舍布置、在读在看等活动足迹类问题，模型判断值得记时声明 tier=light，回答后只补一条微型记录；③跳过档：纯技术、吃什么、一次性购物决策等零增值轮次完全不碰档案。默认用中文工作。
 ---
 
@@ -23,9 +23,9 @@ description: 三档调用。①完整档：当用户谈及自己的经历、状�
 
 **第一档：完整档（full）——默认档。** 任务包含个人经历、状态、感受、关系、偏好、决定等实质个人材料，或用户明确要求记住/归档，或个人背景会实质改变建议、取舍、风险提示或行动顺序时，走完整流程：preflight receipt → capture 原话 → survey/probe/deep 检索 → 派生记录 → finalize → session_check。抒发、闲聊、自我陈述类轮次同样属于本档：档案的价值是提供背景和参考，不以"必须给建议"为前提。
 
-**第二档：轻量补记档（light）——模型显式声明。** 消息本身不构成实质个人材料，但正常回答之后可以从它沉淀出一条活动足迹，例如"《只狼》怎么打弦一郎"→"2026-09 正在玩《只狼》"、"宿舍四人间怎么摆"→"2026-09 在布置宿舍"、"这本书好看吗"→"在读/考虑读某书"。是否值得记由模型具体问题具体分析，不设固定关键词标准。流程：正常回答 → `preflight` 时声明 `tier=light` → capture 原话 → 写**恰好一条**微型派生记录（`tier=light`，`salience` 0–1，带 `capture_id` 回链）→ finalize → session_check。轻量档不做 survey/probe，不拆多条记录，不生成假设或待回访；若回答过程中发现消息实际包含实质个人材料，升级为完整档。
+**第二档：轻量补记档（light）——模型显式声明。** 消息本身不构成实质个人材料，但正常回答之后可以从它沉淀出一条活动足迹，例如"《只狼》怎么打弦一郎"→"2026-09 正在玩《只狼》"、"宿舍四人间怎么摆"→"2026-09 在布置宿舍"、"这本书好看吗"→"在读/考虑读某书"。是否值得记由模型具体问题具体分析，不设固定关键词标准。流程：正常回答 → `preflight` 时声明 `tier=light` → capture 原话 → 写**恰好一条**微型派生记录（`tier=light`，`salience` 0–1，带 `capture_id` 回链）→ finalize → session_check。轻量档不做 survey/probe，不拆多条记录，不生成假设或待回访；若回答过程中发现消息实际包含实质个人材料，升级为完整档：**必须换一个新的 turn_id 重新 preflight**——同一 turn_id 上换档声明会被幂等缓存吞掉（仍返回旧 receipt），skip 档的旧 receipt 更会让 capture 直接被拒。
 
-**第三档：跳过档（skip）——完全不碰档案。** 明显无关、或记录后对未来对话质量增益为零的轮次：纯技术（代码、配置、排障、MCP、插件、仓库维护）、"今天吃什么"、"帮我看看买哪个"这类一次性购物决策、"这东西怎么样"这类无后效的评价请求。不做 survey，不捕获消息，不建派生记录，也不为了审计保存副本。判定标准同轻量档：模型具体问题具体分析，宁可漏记 footprints，不往档案里倒噪声。
+**第三档：跳过档（skip）——完全不碰档案。** 明显无关、或记录后对未来对话质量增益为零的轮次：纯技术（代码、配置、排障、MCP、插件、仓库维护）、"今天吃什么"、"帮我看看买哪个"这类一次性购物决策、"这东西怎么样"这类无后效的评价请求。不做 survey，不捕获消息，不建派生记录，也不为了审计保存副本。判定标准同轻量档：模型具体问题具体分析，宁可漏记 footprints，不往档案里倒噪声。护栏：内容分类已经检出个人材料的轮次不得用 `tier=skip` 压制——那是完整档的轮次；压制行为会留痕在 receipt 的 `reasons_suppressed` 字段，事后审计可查。
 
 档位声明的落点：`scripts/preflight_context.py --tier <auto|full|light|skip>` 或 MCP `personal_preflight_turn` 的 `tier` 参数；`auto` 表示纯内容分类（现有行为）。轻量补记记录用 `personal_add_record` 的 `tier=light` 落盘，与完整档记录同库存储，靠 `tier` 字段和 `salience` 0–1 区分。
 
@@ -254,7 +254,7 @@ receipt 是可审计的事实，不是让模型参考一下的提示：`requires
 
 这条闸门适用于直接提及个人档案、skill、记忆、原话或“记住”的消息，也同样适用于把个人经历、状态、感受、关系、偏好或决定包在改写、润色、翻译、总结、看图审阅任务里的消息。任务外形不能覆盖个人材料。纯技术、配置、排障、项目维护和本 Skill 规则维护属于跳过档，不创建 receipt、capture 或派生记录（见“三档调用闸门”）。
 
-**轻量档的闸门变体**：模型声明 `tier=light` 的轮次同样受硬闸门约束（receipt + capture + finalize + session_check 一项不可少），但读取和派生降级为：不做 survey/probe，派生恰好一条 `tier=light`、`salience` 0–1 的微型记录后立即 finalize。轻量档没有 `no-derivation-needed` 之外的自由裁量空间——要么一条微型记录闭环，要么当初就不该声明 light。
+**轻量档的闸门变体**：模型声明 `tier=light` 的轮次同样受硬闸门约束（receipt + capture + finalize + session_check 一项不可少），但读取和派生降级为：不做 survey/probe，派生恰好一条 `tier=light`、`salience` 0–1 的微型记录后立即 finalize。轻量档不允许以 `no-derivation-needed` 收尾——`session_check --turn-id` 对这种空闭环 fail closed（`light-tier-requires-derived-record`）；要么一条微型记录闭环，要么当初就不该声明 light。
 
 ### 低信号快速通道（完整档内部）
 

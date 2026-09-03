@@ -26,7 +26,8 @@ def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
     - light：轻量补记档——消息本身不含个人材料（如"某游戏怎么打"），但回答能沉淀一条
       活动足迹（如"2026-09 正在玩某游戏"）。仍走 capture→一条微型记录→finalize，跳过 survey/probe。
     - full：模型判定为完整档（内容分类漏判时的兜底）。
-    - skip：模型判定为跳过档，即使关键词误命中也不建 receipt 要求。
+    - skip：模型判定为跳过档，即使关键词误命中也不建 receipt 要求；被压制的内容分类
+      检出会留痕在 reasons_suppressed，供事后审计（护栏：内容已检出个人材料的轮次不应声明 skip）。
     - auto：不声明，纯内容分类。
     """
     if tier not in VALID_TIERS: raise ValueError(f"tier 不合法：{tier}；必须是 {'/'.join(VALID_TIERS)}")
@@ -37,12 +38,15 @@ def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
     if re.search(r"我.{0,12}(为什么|怎么会|是不是).{0,18}(这样|的人|性格|状态)", compact): reasons.append("self-explanation-request")
     if tier == "light" and "model-declared-light-tier" not in reasons: reasons.append("model-declared-light-tier")
     required = bool(reasons) or tier in ("full", "light")
-    if tier == "skip": reasons = []; required = False
+    suppressed: list[str] = []
+    if tier == "skip":
+        suppressed = reasons
+        reasons = []; required = False
     if required:
         signal = "personal-light" if tier == "light" else "personal"
     else:
         signal = "technical" if any(x in compact.casefold() for x in TECHNICAL) else "non-personal"
-    return {"requires_personal_understanding": required, "signal": signal, "tier": tier, "reasons": reasons or ["no-personal-material-detected"], "required_actions": ["capture", "derive-or-close", "session-check"] if required else []}
+    return {"requires_personal_understanding": required, "signal": signal, "tier": tier, "reasons": reasons or ["no-personal-material-detected"], "reasons_suppressed": suppressed, "required_actions": ["capture", "derive-or-close", "session-check"] if required else []}
 
 def read_receipt(turn_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any] | None:
     try:
@@ -95,4 +99,7 @@ def audit_turn(turn_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any]:
     if not receipt.get("requires_personal_understanding"): return {"pass": True, "turn_id": turn_id, "receipt": receipt}
     if not receipt.get("capture_id") or receipt.get("capture_status") != "captured": return {"pass": False, "code": "required-turn-not-captured", "turn_id": turn_id, "receipt": receipt}
     if receipt.get("closure_status") not in {"derived", "no-derivation-needed"}: return {"pass": False, "code": "required-turn-not-closed", "turn_id": turn_id, "receipt": receipt}
+    # 轻量档承诺"恰好一条微型记录"：空闭环（不派生就收尾）在闸门层拒绝——要么闭环，要么当初不该声明 light。
+    if receipt.get("tier") == "light" and receipt.get("closure_status") == "no-derivation-needed":
+        return {"pass": False, "code": "light-tier-requires-derived-record", "turn_id": turn_id, "receipt": receipt}
     return {"pass": True, "turn_id": turn_id, "receipt": receipt}
