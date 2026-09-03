@@ -25,7 +25,9 @@ def main() -> int:
         entry = finalize_capture(args.capture_id, args.disposition, args.reason, root=ROOT)
     except ValueError as exc:
         raise SystemExit(str(exc))
-    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate_memory.py"), "--json", "--require-closed-captures"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    # 不带 --require-closed-captures：多 capture 轮里兄弟 capture 未关闭是流程中态，
+    # 不算本次 finalize 失败；轮级闭环由 session_check --turn-id 把关。
+    proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "validate_memory.py"), "--json"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
     print(json.dumps({"status": "finalized", "capture": entry, "validation": json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else proc.stdout.strip()}, ensure_ascii=False, indent=2))
     return proc.returncode
 

@@ -157,8 +157,13 @@ def finalize_capture_tool(data: dict[str, Any]) -> dict[str, Any]:
     except ValueError as exc:
         return text_result(f"拒绝关闭 capture：{exc}", error=True)
     # finalize 只改派生台账，不影响任何 v2 派生视图；只需校验，不必全量重建。
-    code, output = run_script("validate_memory.py", ["--require-closed-captures"])
-    return text_result(json.dumps({"status": "finalized", "capture": entry, "validation": output}, ensure_ascii=False, indent=2), error=code != 0)
+    # 这里刻意不带 --require-closed-captures：多 capture 轮（正文+附件）里兄弟 capture 尚未关闭
+    # 是流程中态，不能把"本轮还没关完"误报成本工具失败；轮级闭环由 session_check 统一把关。
+    code, output = run_script("validate_memory.py", [])
+    pending = output.get("derivation", {}).get("pending_capture_ids", []) if isinstance(output, dict) else []
+    payload = {"status": "finalized", "capture": entry, "validation": output, "pending_captures": pending}
+    if pending: payload["note"] = "pending captures are expected mid-turn; close them, then run session_check before answering"
+    return text_result(json.dumps(payload, ensure_ascii=False, indent=2), error=code != 0)
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []

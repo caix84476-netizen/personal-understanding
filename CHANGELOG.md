@@ -4,7 +4,8 @@
 
 - Skip 声明留痕：`classify_personal_turn` 在 tier=skip 压制内容分类检出时，把被压掉的原始 reasons 保留进 receipt 新字段 `reasons_suppressed`——"内容判了个人却被声明 skip"从此可事后审计，不再只留当轮 stdout。
 - 轻量档空闭环闸门：`audit_turn` 对 tier=light 且 closure_status=no-derivation-needed 的 receipt fail closed（`light-tier-requires-derived-record`）——文档承诺的"要么一条微型记录闭环，要么不该声明 light"从纯自觉升级为闸门强制；完整档的 no-derivation-needed（低信号快速通道）不受影响。
-- 文档三处修订（SKILL.md 与 zh-CN 镜像同步）：档位升级必须换新 turn_id（同 turn_id 换档被幂等缓存吞掉、skip receipt 拒绝 capture）；skip 护栏条款（内容已检出个人材料的轮次禁止声明 skip）；消除"no-derivation-needed 之外的裁量空间"歧义句。`personal_finalize_capture` 工具描述同步轻量档限制。
+- finalize 返回语义修复（CLI + MCP）：收尾一个 capture 后的校验不再带 `--require-closed-captures`——多 capture 轮（正文+附件）里第一个 finalize 曾被"兄弟 capture 未关闭"误报为 error/rc=1；轮级闭环把关权集中在 session_check，finalize 只对结构性失败报错，并在返回中列出剩余 pending。
+- 文档三处修订（SKILL.md 与 zh-CN 镜像同步）：档位升级必须换新 turn_id（同 turn_id 换档被幂等缓存吞掉、skip receipt 拒绝 capture）；skip 护栏条款（内容已检出个人材料的轮次禁止声明 skip）；消除"no-derivation-needed 之外的裁量空间"歧义句；轻量档多 capture 收尾方式（`verbatim_refs` 挂全本轮 capture）。`personal_finalize_capture` 工具描述同步轻量档限制。README/zh-CN 当前版本声明更新。
 
 ## 2.3.0 — 2026-09-03 — three-tier invocation (full/light/skip)
 

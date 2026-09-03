@@ -162,7 +162,7 @@ Not a framework thought up in one afternoon — a working archive refined throug
 
 ## Status
 
-- **Current release: v2.2.1** — schema stable (`memory/v2/` v2.0.0), actively maintained. Also on [PyPI](https://pypi.org/project/personal-understanding/).
+- **Current release: v2.3.1** — three-tier invocation (full/light/skip); schema stable (`memory/v2/` v2.0.0), actively maintained. Also on [PyPI](https://pypi.org/project/personal-understanding/).
 - Works with any MCP-capable client; the skill itself works in **any language** (English by default — it mirrors yours).
 - Roadmap: editable dashboard pages, richer cold-recall ranking, optional encrypted archive-at-rest.
 

@@ -1,6 +1,11 @@
+import hashlib
+import json
+import struct
+import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +90,48 @@ class LightClosureGateTests(unittest.TestCase):
             root = Path(temp)
             create_receipt("帮我看看买哪个手机", turn_id="turn.skip.gate", tier="skip", root=root)
             self.assertTrue(audit_turn("turn.skip.gate", root)["pass"])
+
+
+class MultiCaptureFinalizeSemanticsTests(unittest.TestCase):
+    """正文+附件的轻量轮：finalize 的退出码不得把"兄弟 capture 未关闭"误报成本次失败。"""
+
+    def _tiny_png(self, path: Path) -> None:
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            piece = struct.pack(">I", len(data)) + tag + data
+            return piece + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + chunk(b"IEND", b""))
+
+    def _sandbox(self) -> Path:
+        sys.path.insert(0, str(ROOT / "tests"))
+        from _fixture import make_temp_repo
+        root = make_temp_repo(Path(tempfile.mkdtemp(prefix="pu-multicap-")))
+        (root / "memory" / "branches" / "domain.games.md").write_text("---\nid: domain.games\nkind: entity\nstatus: current\ntitle: 游戏\n---\n\n# 游戏\n", encoding="utf-8")
+        return root
+
+    def _run(self, root: Path, *args: str) -> tuple[int, str, str]:
+        proc = subprocess.run([sys.executable, str(root / "scripts" / args[0]), *args[1:]], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+    def test_finalize_exit_code_is_zero_while_sibling_capture_is_still_pending(self):
+        root = self._sandbox()
+        text = "看看我截的这个游戏截图，弦一郎这关怎么打？"
+        self._run(root, "preflight_context.py", text, "--turn-id", "turn.multi.reg", "--tier", "light", "--root", str(root))
+        self.assertEqual(self._run(root, "capture_user_update.py", "--text", text, "--capture-id", "cap.reg.text", "--turn-id", "turn.multi.reg")[0], 0)
+        img = root / "shot.png"; self._tiny_png(img)
+        self.assertEqual(self._run(root, "capture_attachment.py", "--file", str(img), "--capture-id", "cap.reg.img", "--turn-id", "turn.multi.reg")[0], 0)
+        sys.path.insert(0, str(root / "scripts"))
+        import mcp_server
+        result = mcp_server.add_record({"id": "state.current.playing-sekiro-reg", "kind": "state", "domain": "domain.games",
+            "summary": "2026-09 正在玩《只狼》，卡在弦一郎。", "tier": "light", "salience": 1,
+            "capture_id": "cap.reg.text", "verbatim_refs": "cap.reg.text;cap.reg.img"})
+        self.assertNotIn("拒绝写入", result["content"][0]["text"])
+        rc1, out1, err1 = self._run(root, "finalize_capture.py", "--capture-id", "cap.reg.text", "--disposition", "derived", "--reason", "正文闭环")
+        self.assertEqual(rc1, 0, f"first finalize must not fail on sibling pending: rc={rc1} err={err1} out={out1[:200]}")
+        rc2, _, err2 = self._run(root, "finalize_capture.py", "--capture-id", "cap.reg.img", "--disposition", "derived", "--reason", "附件归档")
+        self.assertEqual(rc2, 0, err2)
+        rc3, out3, _ = self._run(root, "session_check.py", "--turn-id", "turn.multi.reg", "--allow-warnings")
+        self.assertEqual(rc3, 0, out3)
+        self.assertTrue(json.loads(out3)["may_claim_memory_updated"])
 
 
 if __name__ == "__main__":
