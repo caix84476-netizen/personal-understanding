@@ -27,6 +27,7 @@ def main() -> int:
     source.add_argument("--file", help="UTF-8 完整用户消息文件")
     source.add_argument("--stdin", action="store_true", help="从 stdin 读取完整用户消息")
     ap.add_argument("--turn-id", default="", help="可复用的当前 turn 标识；同一 ID 不得对应不同消息")
+    ap.add_argument("--tier", choices=["auto", "full", "light", "skip"], default="auto", help="模型对三档调用逻辑的显式声明：light=轻量补记；full=完整档兜底；skip=明确跳过；auto=纯内容分类")
     ap.add_argument("--conversation-id", default="")
     ap.add_argument("--budget", type=int, default=4000, help="兼容旧调用；不影响 receipt")
     ap.add_argument("--immediate-reason", choices=["correction", "attribution", "privacy", "structure", "compression", "decision"])
@@ -37,7 +38,7 @@ def main() -> int:
         ap.error("必须且只能提供 text、--file 或 --stdin 之一")
     text = _read(args)
     root = Path(args.root) if args.root else ROOT
-    receipt = create_receipt(text, turn_id=args.turn_id or None, conversation_id=args.conversation_id or None, root=root)
+    receipt = create_receipt(text, turn_id=args.turn_id or None, conversation_id=args.conversation_id or None, tier=args.tier, root=root)
     required = bool(receipt["requires_personal_understanding"])
     low_information = len(text.strip()) <= 2
     review_alert = {"triggered": bool(args.immediate_reason), "reason": args.immediate_reason or "not-due"}

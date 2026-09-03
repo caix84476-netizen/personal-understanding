@@ -17,16 +17,32 @@ def now_iso() -> str: return datetime.now().astimezone().isoformat(timespec="sec
 def receipt_dir(root: Path = DEFAULT_ROOT) -> Path: return root / "memory" / "turn-receipts"
 def receipt_path(turn_id: str, root: Path = DEFAULT_ROOT) -> Path: return receipt_dir(root) / f"{turn_id}.json"
 
-def classify_personal_turn(text: str) -> dict[str, Any]:
-    """Task form never wins over personal content: 润色 personal experience still captures."""
+VALID_TIERS = ("auto", "full", "light", "skip")
+
+def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
+    """Task form never wins over personal content: 润色 personal experience still captures.
+
+    tier 是模型对三档调用逻辑的显式声明，只在内容分类之外生效：
+    - light：轻量补记档——消息本身不含个人材料（如"某游戏怎么打"），但回答能沉淀一条
+      活动足迹（如"2026-09 正在玩某游戏"）。仍走 capture→一条微型记录→finalize，跳过 survey/probe。
+    - full：模型判定为完整档（内容分类漏判时的兜底）。
+    - skip：模型判定为跳过档，即使关键词误命中也不建 receipt 要求。
+    - auto：不声明，纯内容分类。
+    """
+    if tier not in VALID_TIERS: raise ValueError(f"tier 不合法：{tier}；必须是 {'/'.join(VALID_TIERS)}")
     compact = " ".join(text.split()); reasons: list[str] = []
     if any(x in compact for x in EXPLICIT): reasons.append("explicit-memory-or-self-understanding-request")
     first = bool(re.search(r"我|本人|自己|咱们?", compact))
     if first and any(x in compact for x in MARKERS): reasons.append("first-person-experience-or-state")
     if re.search(r"我.{0,12}(为什么|怎么会|是不是).{0,18}(这样|的人|性格|状态)", compact): reasons.append("self-explanation-request")
-    required = bool(reasons)
-    signal = "personal" if required else ("technical" if any(x in compact.casefold() for x in TECHNICAL) else "non-personal")
-    return {"requires_personal_understanding": required, "signal": signal, "reasons": reasons or ["no-personal-material-detected"], "required_actions": ["capture", "derive-or-close", "session-check"] if required else []}
+    if tier == "light" and "model-declared-light-tier" not in reasons: reasons.append("model-declared-light-tier")
+    required = bool(reasons) or tier in ("full", "light")
+    if tier == "skip": reasons = []; required = False
+    if required:
+        signal = "personal-light" if tier == "light" else "personal"
+    else:
+        signal = "technical" if any(x in compact.casefold() for x in TECHNICAL) else "non-personal"
+    return {"requires_personal_understanding": required, "signal": signal, "tier": tier, "reasons": reasons or ["no-personal-material-detected"], "required_actions": ["capture", "derive-or-close", "session-check"] if required else []}
 
 def read_receipt(turn_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any] | None:
     try:
@@ -37,7 +53,7 @@ def read_receipt(turn_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any] | No
 def _write(receipt: dict[str, Any], root: Path) -> None:
     atomic_write_text(receipt_path(str(receipt["turn_id"]), root), json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
 
-def create_receipt(text: str, *, turn_id: str | None = None, conversation_id: str | None = None, root: Path = DEFAULT_ROOT) -> dict[str, Any]:
+def create_receipt(text: str, *, turn_id: str | None = None, conversation_id: str | None = None, tier: str = "auto", root: Path = DEFAULT_ROOT) -> dict[str, Any]:
     turn_id = turn_id or f"turn.{uuid.uuid4().hex}"
     if not ID_RE.fullmatch(turn_id): raise ValueError("turn_id 不合法")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -46,8 +62,8 @@ def create_receipt(text: str, *, turn_id: str | None = None, conversation_id: st
         if old:
             if old.get("message_sha256") != digest: raise ValueError("同一 turn_id 不能对应不同用户消息")
             return old
-        decision = classify_personal_turn(text)
-        receipt = {"schema_version": "1.1.0", "turn_id": turn_id, "created_at": now_iso(), "conversation_id": conversation_id or None, "message_sha256": digest, **decision, "capture_id": None, "capture_ids": [], "capture_status": "required" if decision["requires_personal_understanding"] else "not-required", "closure_status": "required" if decision["requires_personal_understanding"] else "not-required"}
+        decision = classify_personal_turn(text, tier=tier)
+        receipt = {"schema_version": "1.1.1", "turn_id": turn_id, "created_at": now_iso(), "conversation_id": conversation_id or None, "message_sha256": digest, **decision, "capture_id": None, "capture_ids": [], "capture_status": "required" if decision["requires_personal_understanding"] else "not-required", "closure_status": "required" if decision["requires_personal_understanding"] else "not-required"}
         _write(receipt, root); return receipt
 
 def mark_captured(turn_id: str, capture_id: str, root: Path = DEFAULT_ROOT) -> dict[str, Any]:
