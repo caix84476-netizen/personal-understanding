@@ -46,6 +46,21 @@ Every personal message is captured **verbatim and immutably** (SHA-256 hashed, t
 | Runtime | server + vector DB + embeddings | **one folder, Python stdlib only** |
 | Where your data lives | often their cloud | **your machine. Full stop.** |
 
+## Why not just use your agent's built-in memory?
+
+Newer agents ship with "memory" now — if that's enough for you, use it. This project exists for the people who hit its walls:
+
+| | Built-in agent memory | Personal Understanding |
+|---|---|---|
+| Data ownership | locked in the vendor's account, rarely exportable, gone when you switch tools | a plain-text folder on your machine — read it, grep it, back it up, move it |
+| Portability | memory only works inside that product | one archive, any MCP client — Claude, Codex, ZCode, VS Code, whatever comes next |
+| Auditability | black box — you can't see what got stored, or why it answered that way | every derived fact links back to the exact quote; ask *"where does that come from?"* and get shown the source |
+| Control | an on/off switch | you own the policy — capture gates, salience, sensitivity labels, follow-up rules |
+| Retrieval | fuzzy summary recall | three-layer recall that bottoms out in your original words |
+| Privacy | your personal history on their servers | local only — no telemetry, no cloud calls |
+
+Vendor memory optimizes for a smoother conversation inside their product. This project optimizes for a memory **you own, that moves with you across tools, and that can prove where every fact came from.** Different products — vendor memory getting better doesn't make this one redundant.
+
 ## Same message, two very different memories
 
 **Without Personal Understanding** — a typical memory implementation:
