@@ -292,12 +292,35 @@ def rclone_push(remote: str, config: dict) -> str:
     return f"push failed ({proc.returncode}): {(proc.stderr or proc.stdout).strip()[:200]}"
 
 
+def rotate_logs(backups: Path, cap_bytes: int = 1_000_000) -> list[str]:
+    """Keep append-only logs (backup/hot-mirror) from growing forever: over the
+    cap, the current log becomes `.old` (replacing the previous `.old`). The
+    cloud only ever holds two compressed generations, so logs were the only
+    unbounded files left."""
+    rotated = []
+    for name in ("daily-backup.log", "scheduled-backup.log", "hot-mirror.log"):
+        log = backups / name
+        try:
+            if log.exists() and log.stat().st_size > cap_bytes:
+                old = backups / (name + ".old")
+                old.unlink(missing_ok=True)
+                log.rename(old)
+                rotated.append(name)
+        except OSError:
+            continue
+    return rotated
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--also-to", default="", help="temporarily override the full-archive mirror directory (takes priority over config)")
     ap.add_argument("--verify", action="store_true", help="verify the SHA256 of the existing stable snapshot (no packaging, no push)")
     ap.add_argument("--force-promote", action="store_true", help="skip the refresh-window decision and certify the current working archive as the new stable snapshot immediately")
     args = ap.parse_args()
+
+    rotated = rotate_logs(BACKUPS)
+    if rotated:
+        print(json.dumps({"log_rotation": rotated}, ensure_ascii=False))
 
     if args.verify:
         ok, detail = verify_stable()
