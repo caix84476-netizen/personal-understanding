@@ -1,427 +1,430 @@
 ---
 name: personal-understanding
-version: 2.2.1
-description: Use when the user talks about their own experiences, states, feelings, family, friends, school, or decisions; asks to remember, correct, or recall something about themselves; or asks "why am I like this?". The user's exact words are always saved first as an immutable verbatim capture, then retrieval proceeds progressively — timeline survey → entity/context probe → verbatim deep — like human recall: gist first, verification later. Works in English by default and mirrors the user's language.
+version: 2.2.2
+description: 当用户谈及自己的经历、状态、感受、家人朋友、学校、决定、长期偏好，或要求记住、纠正关于他本人的信息，或问"我为什么会这样"时使用。把用户明确提供的个人内容先以不可变原话保存，再沿"时间主干 survey → 实体/情境 probe → 原话 deep"渐进检索，像人回忆一样先想起大概、再分支查证；默认用中文工作。
 ---
 
-# Personal Understanding v2.0
+# 个人理解 v2.0
 
-This is a **local, traceable, verbatim-first, timeline-driven personal cognition archive**. It stores experiences, relationships, states, and rules, and lets the model:
+这是一个**本地、可追溯、原话优先、时间主干驱动的个人认知档案**。它用于保存经历、关系、状态和规则，并让模型在需要时能够：
 
-- recall an experience first;
-- then branch outward along time, people, places, school, objects, works, games, concepts, and living environment;
-- return to the user's exact words at the time;
-- keep facts, feelings, user interpretations, model speculation, and open questions strictly separated;
-- check whether any follow-up items are due;
-- raise contradictions with evidence and context instead of out of nowhere.
+- 先从一件经历想起；
+- 再沿着时间、人物、地点、学校、物品、作品、游戏、概念和生活环境发散；
+- 回到用户当时的原话；
+- 区分事实、感受、用户解释、模型推测和未解决问题；
+- 检查待回访事项是否到期；
+- 发现矛盾时带着证据和上下文提问。
 
-The legacy `memory/records/` layout is kept as a compatibility layer. The v2 derivation trunk lives in `memory/v2/`, and immutable conversation verbatims live in `sources/conversation/`.
+旧版 `memory/records/` 保留为兼容层。v2 的派生主干位于 `memory/v2/`，不可变会话原话位于 `sources/conversation/`。
 
-## Scope gate: do not archive technical work
+## 适用范围闸门：技术任务不进档案
 
-Before invoking this skill, classify the request. If it is primarily technical — including configuration, debugging, code, model/provider setup, MCP, plugins, repositories, or project maintenance — and the answer will not materially change because of the user's experiences, preferences, values, current state, or prior decisions, skip this skill entirely. Do not run a survey, capture the message, create a derived record, or store an audit copy for that request.
+调用本 Skill 前，先判断任务类型。如果任务主要是技术性的，包括配置、排障、代码、模型或渠道设置、MCP、插件、仓库和项目维护，并且答案不会因用户的经历、偏好、价值排序、当前状态或既有决定而实质改变，就完全跳过本 Skill：不做 survey，不捕获消息，不建派生记录，也不为了审计保存副本。
 
-Use this skill only when the request contains personal material, the user explicitly asks to remember or archive it, or personal context would materially change the recommendation, tradeoff, warning, or action order. A request to maintain this skill's boundaries is not itself personal material; update the skill rules without archiving the maintenance conversation.
+只有在任务包含个人材料、用户明确要求记住或归档，或个人背景会实质改变建议、取舍、风险提示或行动顺序时，才使用本 Skill。维护本 Skill 的边界规则本身不属于个人材料；应直接修改 Skill 规则，不要把维护对话归档。
 
-Global conversation style, coding-language preferences, tool preferences, and planning/interview behavior belong in the host client's instruction file, not in this personal archive. This skill must not capture or derive those client-configuration decisions as personal facts.
+全局聊天语气、编程语言偏好、工具偏好和方案拷问行为属于宿主客户端的指令文件，不属于个人档案。不得把这些客户端配置决定捕获或派生成个人事实。
 
-## Highest priority: verbatim fidelity
+## 最高优先级：原话保真
 
-**Whenever the user adds content that belongs in the Personal Understanding skill — in any form, in any scenario — the complete user message must be saved verbatim, character for character, before any summarizing, event splitting, person extraction, relationship judgment, or causal interpretation.**
+**只要用户在任何形式、任何场景补充个人理解 Skill 的内容，必须先把用户完整原话一字不改保存，再做任何摘要、事件拆分、人物提取、关系判断或因果解释。**
 
-The execution order is fixed:
+执行顺序固定为：
 
 ```text
-user verbatim / raw attachments
-  ↓ saved first, never overwritten
+用户原话 / 原始附件
+  ↓ 先保存，不可覆盖
 verbatim fragment
   ↓
-events, entities, context cards, states, follow-ups, hypotheses
+事件、实体、情境卡、状态、待回访、假设
   ↓
-retrieval and answers
+检索与回答
 ```
 
-Mandatory:
+必须遵守：
 
-1. Save the complete user message for text input — not just the sentences the model considers important;
-2. Keep original attachments for images, audio, and files; OCR, transcription, and summaries are all derived content;
-3. Every verbatim carries a `utf8_sha256`, capture time, session identifier, and source path;
-4. Once a verbatim capture exists it must never be silently overwritten; corrections only add new captures and relations;
-5. No model summary may ever pose as the user's verbatim; legacy records that only have summaries must be marked `summary_only`;
-6. If a verbatim capture fails, report the failure — never pretend it "was saved";
-7. First create a same-turn receipt with `scripts/preflight_context.py <full-message> --turn-id <turn-id>` or MCP `personal_preflight_turn`; then capture with `scripts/capture_user_update.py --turn-id <turn-id>` or MCP `personal_capture_user_turn`. A text capture's SHA256 must match the receipt's full message;
-8. When writing derived records with `personal_add_record`, content the user just supplied must carry `capture_id` or `verbatim_refs`; bare `current-conversation` source attributions are forbidden.
+1. 文字输入保存完整用户消息，不只截取模型认为重要的句子；
+2. 图片、音频、文件保留原始附件；OCR、转写、摘要都是派生内容；
+3. 每份原话有 `utf8_sha256`、捕获时间、会话标识和来源路径；
+4. 原话捕获一旦存在，不得静默覆盖；纠正只能新增捕获和关系；
+5. 任何模型摘要都不能冒充用户原话；旧版只有摘要的记录必须标成 `summary_only`；
+6. 原话捕获失败时，必须报告失败，不得假装“已经存好了”；
+7. 先用 `scripts/preflight_context.py <完整消息> --turn-id <turn-id>` 或 MCP `personal_preflight_turn` 创建同一轮的 receipt；再使用 `scripts/capture_user_update.py --turn-id <turn-id>` 或 MCP `personal_capture_user_turn` 完成捕获。文字 capture 的 SHA256 必须与 receipt 的完整消息一致；
+8. 使用 `personal_add_record` 写派生记录时，当前用户补充必须带 `capture_id` 或 `verbatim_refs`，禁止继续用裸 `current-conversation` 冒充原文。
 
-### Derivation closure: a successful capture is not a finished update
+### 派生闭环：捕获成功不等于档案更新完成
 
-A successful `capture` only means the raw material was not lost. It enters `pending` in `memory/derivation-ledger.json` and still must be split semantically, linked, and closed.
+`capture` 成功只代表原始材料没有丢失。它会在 `memory/derivation-ledger.json` 中进入 `pending`，仍然必须完成语义拆分、链接和关闭。
 
-Before every answer, every personal-material capture from the current turn must be in one of these states:
+每次准备回答前，当前轮所有个人材料捕获必须满足以下一种状态：
 
-- all necessary events, entities, states, preferences, rules, contexts, or candidate hypotheses have been created and the capture was closed with `scripts/finalize_capture.py --disposition derived` or MCP tool `personal_finalize_capture`;
-- after dedup and semantic checks, there is genuinely nothing new — close with `no-derivation-needed` and a concrete reason.
+- 已创建全部必要的事件、实体、状态、偏好、规则、情境或候选解释记录，并用 `scripts/finalize_capture.py --disposition derived` 或 MCP 工具 `personal_finalize_capture` 关闭；
+- 经查重和语义检查后确实没有新增信息，用 `no-derivation-needed` 关闭，并写清具体原因。
 
-Hard constraints:
+硬性约束：
 
-1. Never claim a capture "has been recorded", "has been merged in", or end the reply while a current-turn capture is still `pending`;
-2. `derived` requires at least one verifiable bidirectional capture→record link;
-3. One message containing several independent events, people, date corrections, preferences, or states must be split and judged item by item — a single vague summary card does not count;
-4. Standalone confirmations, corrections, and context additions may attach to the same derived record, but each capture is still finalized individually;
-5. Images, audio, and files follow the same closure as text; attachments use `scripts/capture_attachment.py` to keep originals and register hashes;
-6. An exact duplicate attachment may reuse the stored original, but this capture is still registered and closed with a concrete dedup reason;
-7. `scripts/validate_memory.py --require-closed-captures` must block orphaned captures, untracked captures, and unfinished derivations from entering the completed state;
-8. Event dates, source-material writing dates, recall dates, and the date of this ingestion must be kept apart — never pass off the ingestion day as the day something happened.
+1. 禁止在仍有当前轮 `pending` 捕获时声称“已经录入”“已经融入”或结束答复；
+2. `derived` 至少要有一条可验证的 capture→record 双向链接；
+3. 一条原话包含多个独立事件、人物、时间纠正、偏好或状态时，必须逐项判断并拆分，不能只建一张笼统摘要卡应付；
+4. 单独的确认、纠正和上下文补充可以与同一派生记录关联，但仍要逐条 finalize；
+5. 图片、音频和文件与文字遵守同一闭环；附件用 `scripts/capture_attachment.py` 保留原件并登记哈希；
+6. 精确重复附件可以复用已存原件，但本次 capture 仍需登记，并以具体查重理由关闭；
+7. `scripts/validate_memory.py --require-closed-captures` 必须能阻止孤立捕获、未跟踪捕获和未完成派生混入完成态；
+8. 历史材料的事件日期、材料写作日期、回忆日期和本次录入日期必须分开，禁止把录入当天冒充事件发生日。
 
-## Fact hierarchy
+## 事实层级
 
-All content is handled at one of these levels:
+所有内容按以下层级处理：
 
-1. **User verbatim facts**: first-person experiences, states, feelings, preferences, corrections, and rules the user explicitly stated;
-2. **User evaluations of material**: the user saying an analysis is wrong, that someone is not a certain account, that a plan was consultation only, etc.;
-3. **The user's own interpretations**: the user's explanations of causes, meaning, relationships, and the future; these stay user opinions and never auto-promote to objective fact;
-4. **Model candidate interpretations**: patterns or causal hypotheses the model proposes from multiple records — these live only in the hypothesis layer;
-5. **Unconfirmed content**: keep the source and the gap; never fill in from imagination.
+1. **用户原话事实**：用户第一人称明确说出的经历、状态、感受、偏好、纠正和规则；
+2. **用户对材料的评价**：用户说某份分析不对、某人不是某账号、某个方案只是咨询等；
+3. **用户自己的解释**：用户对原因、意义、关系和未来的解释；仍保留为用户观点，不自动变成客观事实；
+4. **模型候选解释**：模型根据多条记录提出的模式或因果假设，必须单独放在假设层；
+5. **无法确认的内容**：保留来源和缺口，不凭空补全。
 
-What the user just said outranks the existing archive. Old facts are never silently erased; new content establishes `supersedes`, `contradicts`, or correction chains.
+用户刚刚说的内容优先于旧档案。旧事实不能被静默擦掉；新内容应建立 `supersedes`、`contradicts` 或纠正链。
 
-## One memory-weight axis
+## 统一记忆权重：只有一条轴
 
-What an entry *is* and how much future understanding depends on it are different things — and there must not be two competing "importance" standards.
+事件性质和记忆权重不是一回事，但不能再搞两套“重要性”标准。
 
-- `entry_kind`: event, state, decision, fact, etc. — what it is;
-- `salience`: how much future understanding of the user depends on it, on a single 0–3 axis:
-  - `3 pivotal`: changes long-term understanding, multiple domains, or life direction;
-  - `2 key`: clearly changes one life thread, a current decision, or a relationship's course;
-  - `1 supporting`: provides background, connections, or counterexamples;
-  - `0 passing`: appears only as a name or detail.
+- `entry_kind`：事件、状态、决定、事实等，表示它是什么；
+- `salience`：它在未来理解用户时有多大依赖价值，唯一采用 0–3 轴：
+  - `3 主轴`：改变长期理解、多个领域或人生方向；
+  - `2 关键`：明显改变某条生活线、当前决定或关系过程；
+  - `1 关联`：提供背景、连接或反例；
+  - `0 提及`：只作为名字或细节出现。
 
-"pivotal / key / supporting / passing" are display labels on this one scale — there is no second "core / important / background event" classification. When migrating legacy records, weights may only be marked `imported heuristic`, never disguised as user-assigned.
+`主轴/关键/关联/提及`是同一个尺度的显示标签，不再另设“核心事件/重要事件/背景事件”第二套分类。旧记录迁移时的权重只能标记为 `imported heuristic`，不能伪装成用户亲自评定。
 
-## The timeline spine
+## 时间主干
 
-The timeline is the archive's first backbone — but it must not force a life into a biography.
+时间主干是档案的第一条脊柱，但不是把人生强行写成一篇传记。
 
-Each timeline entry keeps, where possible:
+每条时间条目尽量保留：
 
-- `date_start`, `date_end`;
-- `date_precision`: day, month, year, approximate, relative order, unknown;
-- `date_basis`: when it happened, when recalled, when the source was written, or model inference;
-- `phase`: childhood, middle school, high school, college transition, etc.;
-- `salience`: the single memory weight;
-- `entity_refs`: people, schools, places, objects, works, concepts, environments;
-- `before_ids`, `after_ids`;
-- fidelity markers for verbatim fragments and legacy summary fragments.
+- `date_start`、`date_end`；
+- `date_precision`：日、月、年、约略、相对顺序、未知；
+- `date_basis`：发生时间、回忆时间、来源时间或模型推断；
+- `phase`：童年、初中、高中、大学过渡期等；
+- `salience`：唯一记忆权重；
+- `entity_refs`：人物、学校、地点、物品、作品、概念和环境；
+- `before_ids`、`after_ids`；
+- 原话片段和旧摘要片段的保真度。
 
-Never record the record-creation date as the event date. If a date is uncertain, write uncertain — never invent dates to make the timeline look tidy.
+禁止把记录创建日期当成事件发生日期。日期不确定就写不确定，不能为了让时间线好看而造日期。
 
-### How the overview is summarized
+### 总览怎么概括
 
-The overview uses an **events-first, experience-follows, current-state-overlaid** structure:
+总览采用**事件优先、体验跟随、当前状态单独叠加**的结构：
 
-1. **Life trunk**: show the pivotal/key events that changed life threads first — never summarize the user in one grand narrative;
-2. **Event expansion**: each event can expand into "what happened, how the user felt, how the user explained it, what impact it had";
-3. **Current state**: a separate overlay of the current core, real circumstances, feeling load, decisions under tension, and the next checkpoint;
-4. **Evidence entries**: every judgment links back to entities, context cards, events, and verbatims.
+1. **人生主干**：先展示改变生活线的主轴/关键事件，不用一段宏大叙事概括用户；
+2. **事件展开**：每个事件可以展开“发生了什么、用户当时感受、用户如何解释、后来产生什么影响”；
+3. **当前状态**：单独展示当前内核、现实处境、感受负荷、正在拉扯的决定和下一检查点；
+4. **证据入口**：每个判断都能跳回实体、情境卡、事件和原话。
 
-So this is neither "examples-first" nor "feelings-first": the timeline uses events as the skeleton, feelings and meaning are the expansion layer of events, and current state adds a short, information-dense snapshot on top.
+因此不是“侧重事例”或“侧重感受”二选一：时间主干以事例为骨架，感受和意义是事件的展开层，当前状态再单独提供一个短而有信息密度的快照。
 
-## Entity profiles: no person is an island
+## 实体档案：人物不是孤岛
 
-Any object the user explicitly refers to and that plays some role in the current content can get a lightweight entity profile — neither skipped because it is a passerby nor padded with invented biography because material is thin.
+任何被用户明确指涉、并且在当前内容中承担一点作用的对象，都可以建立一个轻量实体档案；不因为它是路人就省略，也不因为资料少就编造长篇内容。
 
-Entity types are not limited to people:
+实体类型不限于人物：
 
-- `person`: people, relatives, friends, classmates;
-- `group`: class, team, community;
-- `school_or_organization`: schools, universities, institutions;
-- `place`: cities, homes, courts, workplaces;
-- `object`: computers, headphones, football boots, equipment;
-- `book_or_work`: books, novels, works, articles;
-- `game_or_media`: games, videos, music, account content;
-- `concept`: concepts, values, ideals, systems;
-- `environment`: family environment, school atmosphere, living conditions, institutional environment.
+- `person`：人物、亲属、朋友、同学；
+- `group`：班级、球队、社群；
+- `school_or_organization`：学校、大学、机构；
+- `place`：城市、住处、球场、工作地点；
+- `object`：电脑、耳机、足球鞋、设备；
+- `book_or_work`：书、小说、作品、文章；
+- `game_or_media`：游戏、视频、音乐、账号内容；
+- `concept`：概念、价值、理想、制度；
+- `environment`：家庭环境、学校氛围、生活条件、制度环境。
 
-### Handling vague pronouns
+### 模糊代词怎么处理
 
-A "bare vague pronoun" means:
+“单纯的模糊代词”指：
 
-- the user only said "he/she/that person";
-- neither the current message nor readable context can identify who;
-- and there is not enough information for a stable name or role.
+- 用户只说“他/她/那个人”；
+- 当前消息和可回读上下文都不能确定指向谁；
+- 也没有足够信息建立一个稳定的名字或角色。
 
-In that case, do not invent a fake person and do not write "unconfirmed entity" junk nodes the model cannot use: hang that verbatim on the event's `unresolved_referent`, keep the original text, and fold it into the formal profile once the user later clarifies who it is.
+这种情况下不创造一个假人物，也不写“未确认实体”这种模型看不懂的垃圾节点；把这段原话挂在事件的 `unresolved_referent` 上，保留原文，等用户之后明确指向再补进正式档案。
 
-Whenever identity IS clear from context, create a short profile even from a single sentence. A passerby profile with a few sentences is not waste.
+只要身份能从上下文确定，即使只有一句话，也创建一个短档案。路人档案可以只有几句话，这不构成浪费。
 
-### Profile content and redundancy
+### 档案内容和冗余
 
-Entity profiles never hand-copy a duplicate biography. Instead:
+实体档案不手抄一份重复传记。采用：
 
-- **Facts live in exactly one place**: verbatims and events are the canonical source;
-- **Entity pages are projections**: they display all related stories and verbatim entry points;
-- **Context cards are cross entries**: they show an entity's shared stories within a specific relationship/place/phase;
-- **Cross connections are never deleted**: a person's profile must keep its links to other people, schools, places, and environments;
-- `identity_note`, time spans, etc. are retrieval metadata that stay out of the profile body unless they affect understanding.
+- **事实只保留一份**：原话和事件是 canonical source；
+- **实体页是投影**：展示所有相关故事和原话入口；
+- **情境卡是交叉入口**：展示某个实体在特定关系/地点/阶段中的共同故事；
+- **交叉连接不删除**：人物档案必须保留与其他人物、学校、地点和环境的连接；
+- `identity_note`、时间跨度等只是检索元数据，默认不占据档案正文，除非它们本身影响理解。
 
-A person's profile may talk about the people around them, because social relations are part of who that person is. Connections stay; the same fact returns to the same canonical fragment through links and context cards.
+一个人的档案可以谈他身边的人，因为社会关系本来就是这个人的一部分。连接保留，同一事实通过链接和情境卡回到同一个 canonical 片段。
 
-## Context cards: solving the "school × football" problem
+## 情境卡：解决“学校 × 足球”问题
 
-Beyond entity profiles there are `facet` / `context cards`:
+实体档案之外增加 `facet` / `context card`。
+
+例如：
 
 ```text
-school entity
-football entity
-school × football context card
+学校实体
+足球实体
+学校 × 足球情境卡
 ```
 
-The school profile jumps to this card, the football profile jumps to the same card. The card holds their shared events, people, places, objects, and verbatim entry points — never a fabricated "school football story" copy.
+学校档案可以跳转到这张卡，足球档案也可以跳转到同一张卡。卡片里面放共同事件、共同人物、地点、物品和原话入口，不复制一份假的“学校足球故事”。
 
-Context card boundaries form around shared stories:
+情境卡的边界按共同故事形成：
 
-- co-occurring in the same event;
-- an explicit relation or spatial connection;
-- a shared user experience or decision;
-- helping explain the current question.
+- 同一事件中共同出现；
+- 有明确关系或空间连接；
+- 有共同的用户体验或决定；
+- 有助于解释当前问题。
 
-Coincidental co-occurrence is never auto-written as causation — but cross-domain cards are not deleted either. Relevance is decided by events, time, entities, and user experience together.
+如果只是偶然共现，不自动写成因果关系；但也不因为“跨领域”就删掉。相关性由事件、时间、实体和用户体验共同决定。
 
-## Current state
+## 当前状态
 
-Current state is never a vague one-liner and never a full biography. Default five blocks:
+当前状态不写成一句空话，也不写成长篇传记。默认使用五块：
 
-1. **Personal core**: values, boundaries, and decision tendencies still in effect;
-2. **Real circumstances**: life facts and resources currently in play;
-3. **Experience load**: emotions, energy, bodily feelings, and stress the user actually expressed;
-4. **Open tensions**: unresolved decisions, conflicts, counterexamples, uncertainties;
-5. **Next checkpoint**: follow-ups, deadlines, places needing new evidence.
+1. **个人内核**：当前仍在起作用的价值、边界和决策倾向；
+2. **现实处境**：正在发生的生活事实和资源条件；
+3. **体验负荷**：用户明确表达的情绪、能量、身体感受和压力；
+4. **开放张力**：尚未解决的决定、冲突、反例和不确定性；
+5. **下一检查点**：待回访、期限、需要新证据的地方。
 
-Each block gets 1–3 high-density entries with expandable key examples and verbatims — never core-only, never everything crammed onto the front page.
+每块先给 1–3 个高密度条目，附带可展开的重要事例和原话，不用只留内核，也不用把所有事例塞进首页。
 
-## Follow-ups and proactive check-ins
+## 待办与主动回访
 
-Questions the model raised, the user's "let's see in a few days", the other side not having replied, pending decisions, items to confirm — all must enter `memory/v2/followups.jsonl` with at least:
+模型提出的问题、用户提到的“等几天看结果”、对方尚未回复、等待决定或待确认事项，必须进入 `memory/v2/followups.jsonl`，至少包含：
 
-- the original question or pending item;
-- concrete context;
-- creation date;
-- `due_at` or an explicit `due_rule`;
-- current status;
-- source;
-- last-checked time;
-- resolution or follow-up record.
+- 原问题或待确认事项；
+- 具体上下文；
+- 创建日期；
+- `due_at` 或明确的 `due_rule`；
+- 当前状态；
+- 来源；
+- 上次检查时间；
+- 解决结果或后续记录。
 
-Every time the skill runs, first check follow-ups that are due or near due (default 3-day window). When due, ask proactively — but always with context:
+每次运行个人理解 Skill 时，先检查已到期和临近到期（默认 3 天窗口）的待回访。到期后主动提问，但提问必须带上下文：
 
 ```text
-On <date> you mentioned: …
-At the time we expected: …
-It's check-in time now.
-How did it turn out?
+你在某日提到：……
+当时约定/预期是：……
+现在已经到检查时间了。
+这件事后来怎么样？
 ```
 
-If the current message contradicts the archive, list both conflicting facts, dates, sources, and the delta before asking — never pop a context-free question.
+如果发现当前消息和档案存在矛盾，也要把冲突的两条事实、日期、来源和差异列出来，再询问用户；禁止没头没尾地突然追问。
 
-## Guided starters: when the user doesn't know what to tell
+## 引导开场：用户不知道要讲什么时
 
-Some users freeze in front of an empty archive. When the user asks what to share ("what should I tell you?"), seems unsure how to begin, or the archive is freshly initialized, run `python scripts/conversation_starters.py` (JSON output) and pick **one** starter — ranked by due follow-ups first, then the emptiest domain — and ask it warmly, in your own words.
+有些用户面对一个空档案会僵住。当用户问"我该讲些什么"、表现得不知从何说起，或档案刚初始化时，运行 `python scripts/conversation_starters.py`（JSON 输出），挑**一条**开场建议——排序为：到期回访优先，其次最空的领域——用你自己的话温暖地问出来。
 
-- Never dump the whole list as an interrogation; offer one prompt, let them answer, and capture the verbatim like any other turn;
-- suggestions must come from the archive's real gaps (an empty domain, an open loop, a stale current state) — never invented psychology;
-- after they answer, resume the normal flow: capture → derive → answer.
+- 绝不把整张清单当审问一次抛出；一次只给一条提示，等用户回答，然后像任何一轮一样捕获原话；
+- 建议必须来自档案的真实空缺（空领域、开放回路、过期状态）——绝不编造心理学判断；
+- 用户回答后，回归正常流程：捕获 → 派生 → 回答。
 
-## Hard gate before answering (cannot be skipped)
+## 回答前硬闸门（不可跳过）
 
-Whenever the current user message contains personal experience, state, feelings, self-evaluation, relationships, decisions, corrections, long-term preferences, or asks "why am I like this", the **complete current user message** must be saved as a new immutable capture — successfully — before any survey, probe, deep read, derived record, causal analysis, or answer. A previous turn's capture, an old summary, `current-conversation`, or model memory is never a substitute.
+只要当前用户消息包含个人经历、状态、感受、自我评价、关系、决定、纠正、长期偏好，或要求解释“我为什么会这样”，必须先通过**内容优先**的 preflight 创建当前轮 receipt，再把**当前这条完整用户消息**作为一份新的 immutable capture 保存成功后，才能执行 survey、probe、deep、派生记录、因果分析或回答。不能用上一轮 capture、旧摘要、`current-conversation` 或模型记忆代替。
 
-The execution order is fixed:
+执行顺序固定为：
 
 ```text
-content-first preflight receipt → capture bound to receipt (read-back verified)
-→ survey/probe/deep → derived records/hypotheses → finalize
-→ session_check --turn-id → answer / claim update
+内容优先 preflight receipt → capture（绑定 receipt，回读校验）
+→ survey/probe/deep → 派生记录/假设 → finalize
+→ session_check --turn-id → 回答/声称已更新
 ```
 
-The receipt is an auditable fact, not an advisory prompt: when `requires_personal_understanding=true`, capture, finalization, and `session_check --turn-id` are all mandatory and fail closed. If capture fails, stop all personal-understanding analysis and report the failure explicitly; never answer first and backfill later. If capture succeeds but no derived record exists yet, the answer must clearly distinguish "verbatim saved" from "not yet written into experience/state cards" — never present a raw capture as a fully updated archive.
+receipt 是可审计的事实，不是让模型参考一下的提示：`requires_personal_understanding=true` 时，capture、finalize 和 `session_check --turn-id` 缺一项即 fail closed。若捕获失败，停止个人理解相关分析，明确报告失败原因；不得继续回答后再补录。若捕获成功但尚未形成派生记录，回答中必须明确区分”已保存原话”和”尚未写入经历/状态卡”，不得把原话捕获说成档案已经完整更新。
 
-This gate applies to messages that explicitly mention the personal archive, the skill, memory, verbatims, or "remember" — and equally to personal experiences, states, feelings, relationships, preferences, or decisions supplied through a rewrite, edit, translation, summary, or image-review request. Task form never overrides personal material. Pure technical work, configuration, debugging, project maintenance, and maintenance of this skill's rules do not create receipts, captures, or derived records.
+这条闸门适用于直接提及个人档案、skill、记忆、原话或“记住”的消息，也同样适用于把个人经历、状态、感受、关系、偏好或决定包在改写、润色、翻译、总结、看图审阅任务里的消息。任务外形不能覆盖个人材料。纯技术、配置、排障、项目维护和本 Skill 规则维护不创建 receipt、capture 或派生记录。
 
-### The low-signal fast path
+### 低信号快速通道
 
-Low-information messages which are also content-classified as personal (for example, "kind of lost" or "hard to say") are bound by two contracts at once: answers must feel natural (see the low-signal response contract), yet the gate still demands capture. A bare "ugh" does not enter the archive by itself. To keep chat from turning into a retrieval ceremony, low-signal personal turns run in this order:
+被内容判定为个人材料的低信息量消息（“有点迷茫”“说不上来”，见 `scripts/preflight_context.py` 的 low-information 判定）同时受两份契约约束：回答要自然（见低信号响应契约），闸门又要求先捕获。单独一个“唉”不会自动进入档案。为避免把聊天变成检索现场，低信号个人轮次按以下顺序执行：
 
-1. **Capture immediately, no deferral** — verbatim fidelity has no exceptions;
-2. **Reads degrade**: skip the full survey; pick the single most likely entry from the due follow-ups and current-state snapshot in the preflight output; at most one small probe if truly necessary;
-3. **Answer first**: open like a familiar person would (one or two details, then stop), with tool calls capped at capture + at most one light read;
-4. **Close the loop after answering**: finalize (derive or `no-derivation-needed`) within the same turn and run session_check; if the user follows up with substantive content, escalate to the full flow.
+1. **capture 立即执行，不可延迟**——原话保真没有例外；
+2. **读取降级**：不跑完整 survey，直接用 preflight 输出里的到期回访 + 当前状态快照挑一个最可能的入口；确有必要才做一次小范围 probe；
+3. **回答优先**：像熟人聊天一样直接开口（一两个细节，说完就停），工具调用控制在 capture + 至多一次轻读取；
+4. **finalize 收尾**：回答之后的同一轮内完成派生或 `no-derivation-needed` 关闭，并运行 session_check；若用户连续追问转成实质内容，则升级为完整流程。
 
-The fast path relaxes the timing of reads and derivation — never the verbatim capture or the closure itself.
+快速通道放宽的是读取和派生的时序，绝不放宽原话捕获和闭环本身。
 
-### Read entry points and MCP
+### 读取入口与 MCP
 
-Prefer the MCP tools (`personal_catalog`, `personal_retrieve`, `personal_session_check`, …) for reads and writes; they carry read-preflight capture validation. If no `personal_*` tools exist in the current session, this client has not registered the local MCP service: run `python scripts/install_mcp.py --auto` (idempotent, safe to repeat), then ask the user to restart the session; until registered, the CLI scripts perform the same work.
+优先使用 MCP 工具（`personal_catalog`、`personal_retrieve`、`personal_session_check` 等）读写；它们带读取前捕获校验。若当前会话工具列表里没有 `personal_*` 工具，说明本客户端尚未注册本地 MCP 服务：运行 `python scripts/install_mcp.py --auto`（幂等，可重复执行）完成注册后提示用户重启会话；注册前仍可用 CLI 脚本完成同样的工作。
 
-## Retrieval: never read everything
+## 检索流程：不是把所有东西读完
 
-v2 retrieval is neither "stuff the whole archive into the model" nor keyword search. It is three layers of divergence:
+v2 的检索不是“先把整个档案库塞进模型”，也不是只搜关键词。它是三层发散：
 
-### survey: the global map
+### survey：看全局地图
 
-Read the compact catalog only — never full verbatims:
+只读紧凑目录，不读原话全文：
 
-- timeline spine;
-- current state;
-- entity catalog;
-- context card catalog;
-- follow-ups;
-- hypothesis catalog;
-- material gaps and review warnings.
+- 时间主干；
+- 当前状态；
+- 实体目录；
+- 情境卡目录；
+- 待回访；
+- 因果假设目录；
+- 资料缺口和审查警告。
 
-survey is a compact routing map without the full legacy record list; use `catalog_context.py --view routing --query <message>` to expand legacy catalogs per domain, or `--view full` for the complete catalog.
+survey 是紧凑路由地图，不含旧记录全量列表；需要按领域展开旧目录时用 `catalog_context.py --view routing --query <消息>`，需要完整目录时用 `--view full`。
 
-### probe: diverge from entries
+### probe：从入口发散
 
-The model picks one or more entries:
+模型选择一个或多个入口：
 
-- events;
-- entities;
-- context cards;
-- current state;
-- follow-ups;
-- candidate hypotheses.
+- 事件；
+- 实体；
+- 情境卡；
+- 当前状态；
+- 待回访；
+- 候选假设。
 
-Then read those derived cards and expand:
+然后读取入口的派生卡片，并扩展：
 
-- time neighbors before/after an event;
-- the event's people, places, schools, objects, works, concepts, environments;
-- context cards where those entities co-occur;
-- supports / contradicts / alternatives / supersedes relations.
+- 事件前后时间邻居；
+- 事件涉及的人、地点、学校、物品、作品、概念和环境；
+- 这些实体共同出现的情境卡；
+- 支持、反驳、替代和 supersede 关系。
 
-Expansion reads only the necessary range while keeping small details reachable via cards, reducing missed recall for minor figures. Every timeline entry in probe output carries an `evidence_fidelity` count (how much verbatim vs. summary debt backs it); claims resting on summary debt must be disclosed to the user as "this part comes from an old summary, not verbatim". Each retrieval's decision trace appends to `memory/v2/traces/` — replay it when recall misses or mis-attribution happens.
+这些扩展只读取必要范围，同时保证细枝末节有卡片可达，减少关键小人物漏召回。probe 输出的每条时间条目带 `evidence_fidelity` 保真计数（逐字/摘要债务各占多少）；用摘要债务支撑的说法要向用户说明"这一段来自旧摘要，不是原话"。每次检索的决策轨迹会追加到 `memory/v2/traces/`，漏召回和误归属时用它回放检索过程。
 
-### deep: verify against verbatim
+### deep：回到原话核验
 
-Only when the answer needs exact facts, dates, attribution, contradictions, relationships, the user's original meaning, or causal explanation do we read the corresponding verbatim fragments. Legacy summaries remain summary debt — they never pose as original text in the deep stage.
+只有当回答需要精确事实、时间、归属、矛盾、人物关系、用户原意或因果解释时，才读取对应原话片段。旧摘要只能作为摘要债务，不能在 deep 阶段伪装成原文。
 
-### Cold recall: when there is no keyword
+### 冷回溯：想不起关键词时
 
-When the user says "I forget" or "we talked about something like this before", do not demand keywords and do not declare "nothing found". Descend the ladder:
+用户说"我忘了""好像以前聊过类似的事"时，不要求他提供关键词，也不宣布"查不到"。按阶梯下降：
 
-1. probe from any person, place, object, or time clue already mentioned; diverge along entities and facets;
-2. on any hit, walk `before_ids`/`after_ids` time neighbors forward and backward;
-3. still nothing: browse titles in a time window with `retrieve_v2.py --window 2025-03` (or `start:end`), like flipping through an old photo album, and let the user claim candidates;
-4. if even time is vague, scan pivotal entries phase by phase (childhood / middle school / high school / college).
+1. 从已提到的任何人物、地点、物品、时间线索做 probe，顺实体和 facet 发散；
+2. 命中任意条目后，沿 `before_ids`/`after_ids` 时间邻居向前后走；
+3. 仍无命中时，用 `retrieve_v2.py --window 2025-03`（或 `起:止` 区间）按时间窗浏览标题，像翻老相册一样扫过候选，让用户认领；
+4. 时间也说不准就按 phase（童年/初中/高中/大学）逐段扫主轴。
 
-Demoted passing-level records stay reachable on all three paths — entity, keyword, and time window. Demotion only removes them from the standing map; it never makes them unreachable.
+降权到提及级的记录同样在实体、关键词和时间窗三条路径上可达；降权只把它移出常驻地图，不把它变成不可达。
 
-## The causal interpretation layer
+## 因果解释层
 
-Causal interpretation is its own large undertaking — it never runs wild inside ordinary fact retrieval. A candidate hypothesis carries at least:
+因果解释是独立的大工程，不在普通事实检索里自动乱跑。候选假设至少包含：
 
-- `claim`: what it explains;
-- `mechanism`: through what process;
-- `supports`: supporting evidence;
-- `contradicts`: counterexamples and limits;
-- `alternatives`: competing explanations;
-- `scope`: in which times, scenes, and relationships it holds;
-- `confidence`: confidence level;
-- `status: candidate`: candidate by default — never treated as fact.
+- `claim`：解释什么；
+- `mechanism`：通过什么过程发生；
+- `supports`：支持证据；
+- `contradicts`：反例或限制；
+- `alternatives`：竞争解释；
+- `scope`：在哪些时间、场景和关系里成立；
+- `confidence`：置信度；
+- `status: candidate`：默认候选，不能当作事实。
 
-Trigger conditions:
+触发条件：
 
-1. the user explicitly asks "why am I like this";
-2. multiple independent experiences repeat the same condition–response–adaptation chain across time;
-3. a deep review finds multiple model-dependent stories;
-4. a current decision genuinely requires comparing causes.
+1. 用户明确问“为什么我会这样”；
+2. 多条独立经历跨时间重复出现同一条件—反应—适应链；
+3. 深度回顾发现多个模型互相依赖；
+4. 当前决定确实需要比较不同成因。
 
-Generation steps:
+生成步骤：
 
 ```text
-candidate pattern → mechanism sketch → supporting evidence → counterexamples/limits → competing explanations → user confirms / keep observing
+候选模式 → 机制草图 → 支持证据 → 反例/限制 → 竞争解释 → 用户确认/继续观察
 ```
 
-A single event never yields a stable cause. Causal hypotheses enter deep reads only when the current question needs explanation; ordinary fact questions never auto-load them.
+单次事件不能直接生成稳定因果。因果假设只有在当前问题需要解释时才进入深读；普通事实问题不自动加载它。
 
-## Privacy boundaries
+## 隐私边界
 
-The archive owner has explicitly allowed the local skill to read private / highly-private content when relevant. Sensitivity is not a reason to hide, demote, or archive.
+用户已明确允许本地 Skill 在相关时正常读取 private / highly-private 内容。敏感度不再作为隐藏、降级或归档理由。
 
-But relevance filtering stays:
+但相关性过滤仍然保留：
 
-- when personal material would change the answer, sensitive content is read by relevance;
-- irrelevant questions never proactively leak unrelated private material;
-- verbatims, profiles, and sources are processed only inside the local skill directory;
-- external chats, third-party analyses, OCR, and model analyses still never auto-count as user fact.
+- 个人资料会改变答案时，敏感内容按相关性读取；
+- 无关问题不主动泄露无关私密材料；
+- 原话、档案和来源只在本地 Skill 目录处理；
+- 外部聊天、第三方分析、OCR 和模型分析仍不能自动当作用户事实。
 
-Relaxing privacy reading is not abolishing boundaries — otherwise you are not understanding the user better, you are dumping the archive into every answer.
+放宽隐私读取，不等于取消边界；否则不是更懂用户，是把档案当垃圾桶倒进每个回答。
 
-## Deep review and structural validation
+## 深度审查和结构校验
 
-Structural validation no longer just prints "pass". `scripts/validate_memory.py` has three outcomes:
+结构校验不再只输出“通过”。`scripts/validate_memory.py` 有三种结果：
 
-- `clean`: no errors, no warnings;
-- `warnings`: structurally usable, but there is summary debt, source gaps, date gaps, pending follow-ups, or entity connection issues;
-- `failed`: hash errors, duplicate IDs, orphaned references, relation cycles, corrupt JSONL, or unacceptable schema errors.
+- `clean`：没有错误或警告；
+- `warnings`：结构可用，但存在摘要债务、来源缺口、日期缺口、待回访或实体连接问题；
+- `failed`：存在哈希错误、重复 ID、孤立引用、关系环、损坏 JSONL 或不可接受的 schema 错误。
 
-Strict mode `--strict` treats warnings as failures too — for migration acceptance.
+严格模式 `--strict` 会把警告也视为失败，适合迁移验收。
 
-`review_v2.py --deep --json` produces a semantic review package checking:
+`review_v2.py --deep --json` 用于生成语义审查包，重点检查：
 
-- verbatim/event consistency;
-- correct attribution of people/schools/places/objects;
-- shared stories wrongly deleted;
-- timeline order vs. "looking back later" confusion;
-- facts, feelings, user interpretations, and model hypotheses mixed into one layer;
-- legacy summaries posing as verbatim;
-- causal hypotheses missing supports, counterexamples, or scope;
-- follow-ups due or resolved.
+- 原话与事件是否一致；
+- 人物/学校/地点/物品是否归属正确；
+- 共同故事是否被错误删掉；
+- 时间顺序和“后来回望”是否混淆；
+- 事实、感受、用户解释和模型假设是否混层；
+- 旧摘要是否被错误当成原话；
+- 因果假设是否有支持、反例和范围；
+- 待回访是否到期、是否已经解决。
 
-Deep review may output warnings and material gaps, but never invents lost verbatims back into existence. Structural cleanliness is not semantic correctness; review must come with a risk report.
+深度审查可以输出警告和资料缺口，但不能凭空补写丢失的原话。结构干净不等于语义正确；审查必须有风险报告。
 
-## Maintenance entry points
+## 维护入口
 
-- `scripts/capture_user_update.py`: save the complete user verbatim first (for very long messages prefer `--stdin` or `--file` to dodge command-line length limits);
-- `scripts/preflight_context.py` and `scripts/turn_receipts.py`: create, read, and audit immutable turn receipts;
-- `scripts/capture_attachment.py`: store or SHA256-deduplicate raw attachments and register pending captures;
-- `scripts/derivation_ledger.py`: maintain capture→records state and link audits; `--repair` rebuilds the projection from immutable capture metadata and record references;
-- `scripts/finalize_capture.py`: complete a derivation or record the concrete "nothing to derive" reason;
-- `scripts/catalog_context.py`: v2 global survey;
-- `scripts/retrieve_v2.py`: v2 probe/deep;
-- `scripts/followup_check.py`: follow-up checks;
-- `scripts/review_v2.py --deep`: deep structure/fidelity/semantic review package;
-- `scripts/validate_memory.py`: failed/warnings/clean three-state validation;
-- `scripts/session_check.py --turn-id <turn-id>`: the hard gate before answering or claiming "the archive is updated" (receipt + structure + derivation closure + v2 integrity; non-zero exit on failure);
-- `scripts/salience_review.py`: quarterly salience review, demoting long-unconfirmed imported weights to passing level (see `references/review-and-feedback-loops.md`);
-- `scripts/record_feedback.py`: record how answers that relied on memory landed (helpful/missed/corrected); `review_v2 --deep` aggregates frequently corrected memories (see `references/review-and-feedback-loops.md`);
-- `scripts/rebuild_views.py`: rebuild legacy compatibility views and v2 derived views;
-- `scripts/backup_archive.py`: SHA256-manifested local backups, auto-mirrored to a second location from `memory/backup-config.json` (see `references/maintenance-and-durability.md`; after important updates, before migrations, and at least weekly);
-- `scripts/init_archive.py`: bootstrap a fresh archive skeleton (directories + generic domain branches) on a brand-new install; idempotent, run once before first use;
-- `scripts/install_mcp.py`: detect AI clients on this machine and register the local MCP service (idempotent; run once after changing machines or pasting the skill into a new client);
-- `scripts/mcp_server.py`: local MCP read/write entry;
-- `dashboard/`: the v2 visual audit panel.
+- `scripts/capture_user_update.py`：先保存完整用户原话（超长消息优先用 `--stdin` 或 `--file`，避开命令行长度限制）；
+- `scripts/preflight_context.py` 与 `scripts/turn_receipts.py`：创建、读取和审计不可变的 turn receipt；
+- `scripts/capture_attachment.py`：保存或按 SHA256 精确去重原始附件，并登记 pending；
+- `scripts/derivation_ledger.py`：维护 capture→records 状态和链接审计；`--repair` 可由 immutable capture metadata 和 record 引用重建投影；
+- `scripts/finalize_capture.py`：完成派生或记录“无需派生”的具体理由；
+- `scripts/catalog_context.py`：v2 全局 survey；
+- `scripts/retrieve_v2.py`：v2 probe/deep；
+- `scripts/followup_check.py`：待回访检查；
+- `scripts/review_v2.py --deep`：深度结构/保真/语义准备审查；
+- `scripts/validate_memory.py`：失败、警告、干净三态校验；
+- `scripts/session_check.py --turn-id <turn-id>`：回答或声称"档案已更新"前的硬闸门（receipt + 结构 + 派生闭环 + v2 完整性，失败退出码非 0）；
+- `scripts/salience_review.py`：季度记忆权重复盘，把长期未确认的导入权重降为提及级（见 `references/review-and-feedback-loops.md`）；
+- `scripts/record_feedback.py`：记录依赖个人记忆的回答效果（helpful/missed/corrected），`review_v2 --deep` 汇总常被纠正的记忆（见 `references/review-and-feedback-loops.md`）；
+- `scripts/rebuild_views.py`：重建旧版兼容视图和 v2 派生视图；
+- `scripts/backup_archive.py`：生成带 SHA256 清单的本地备份，并自动镜像到 `memory/backup-config.json` 指定的第二位置（见 `references/maintenance-and-durability.md`；重要更新后、迁移前、至少每周一次）；
+- `scripts/init_archive.py`：全新安装时初始化档案骨架（目录 + 通用领域分支），首次使用前运行一次（幂等）；
+- `scripts/install_mcp.py`：检测本机各 AI 客户端并注册本地 MCP 服务（幂等；换机器、粘贴 skill 到新客户端后运行一次即可）；
+- `scripts/mcp_server.py`：本地 MCP 读写入口；
+- `dashboard/`：v2 可视化面板。
 
-### Maintenance principles
+### 维护原则
 
-- Finish the current task first, then non-urgent maintenance;
-- but user corrections, failed verbatim captures, misattributed people, structural corruption, due follow-ups, and imminent decisions are handled immediately;
-- the `maintenance` hints in preflight / session_check output are the only maintenance state to watch: when backups are overdue (`backup.due: true`), run `scripts/backup_archive.py` after the current task and before ending the session; when an answer that relied on memory drew an explicit correction/confirmation, record feedback per `references/review-and-feedback-loops.md` (never record without quotable verbatim evidence);
-- permanent deletion only on the archive owner's explicit instruction;
-- legacy summaries are never deleted — marked as migration debt;
-- new profiles never overwrite old ones — version chains;
-- all writers (CLI, MCP, ledger, and rebuilds) share an inter-process lock and commit through atomic replacement; every write fresh-reads, merges, and commits inside the lock. Never overwrite another Agent/MCP writer from a stale JSON/JSONL snapshot;
-- never promote one self-assessment into a personality verdict;
-- never fabricate causal edges, merge people, or fill timeline gaps to make the graph prettier.
+- 先完成当前任务，再做非紧急维护；
+- 但用户纠正、原话捕获失败、人物归属错误、结构损坏、待回访到期和临近决策必须及时处理；
+- preflight / session_check 输出里的 `maintenance` 提醒是唯一需要看的维护状态：备份超期（`backup.due: true`）时，当前任务完成后先运行 `scripts/backup_archive.py` 再结束会话；依赖个人记忆的回答出现用户明确纠正/确认时，按 `references/review-and-feedback-loops.md` 记录反馈（写不出原话证据就不记录）；
+- 永久删除必须由用户明确指定；
+- 旧摘要不删除，标记为迁移债务；
+- 新档案不覆盖旧档案，使用版本链；
+- 所有 writer（CLI、MCP、ledger、重建）共享进程间锁，并以原子 replace 落盘；写入一律在锁内基于最新磁盘快照读取、合并、提交。禁止从旧 JSON/JSONL 快照覆盖其他 Agent/MCP 已写入的数据；
+- 不把用户一句自我评价直接升级成人格定论；
+- 不为了让图谱好看而制造因果边、合并人物或填补时间。
 
-## Visualization audit contract
+## 可视化审计契约
 
-The panel exists so the owner can check whether the skill follows its own rules. The front page offers status and count entries only; details live in the timeline, entity, context, source, follow-up, and diagnostics pages.
+面板的任务是让用户检查 Skill 是否按规则工作。首页只提供状态入口和数量入口；详细内容进入对应的时间、实体、情境、来源、待回访和诊断页面。
 
-The diagnostics page must show:
+诊断页必须能看到：
 
-- real file entries for `SKILL.md`, references, scripts, and memory/v2;
-- actual counts of verbatim captures, fragments, timeline entries, entities, context cards, and retrieval levels;
-- machine validation results (`clean`, `warnings`, `failed`);
-- legacy summary debt, date gaps, entity merges, unresolved relations, and candidate hypothesis gaps;
-- the complete chain from an event to entities, contexts, knowledge cards, time neighbors, and verbatim sources.
+- `SKILL.md`、references、scripts、memory/v2 的真实文件入口；
+- 原话捕获、片段、时间条目、实体、情境卡和检索层级的实际数量；
+- `clean`、`warnings`、`failed` 的机器校验结果；
+- 旧摘要债务、日期缺口、实体归并、关系未解析和候选假设缺口；
+- 从事件跳到实体、情境、知识卡、前后条目和原话来源的完整链路。
 
-Every list click uses its own ID. Never bind multiple entries to one default target. Entity redirects must show old ID, canonical ID, and merge source.
+任何列表点击都要使用自己的 ID。禁止把多个条目绑定到同一个默认目标。实体重定向要显示旧 ID、canonical ID 和归并来源。
+
