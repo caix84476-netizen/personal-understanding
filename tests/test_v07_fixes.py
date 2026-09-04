@@ -75,6 +75,69 @@ sys.exit(0)
             self.assertEqual(len(new_files), 1)
             self.assertIn("新状态", new_files[0].read_text(encoding="utf-8"))
 
+    def _seed(self, root: Path, rid: str, kind: str) -> Path:
+        records = root / "memory" / "records"; records.mkdir(parents=True)
+        old = records / f"{rid}.md"
+        old.write_text("\n".join(["---", f"id: {rid}", f"kind: {kind}", "status: current", "confidence: high",
+                                  "sensitivity: ordinary", "domain: domain.self-collaboration",
+                                  "source_refs: current-conversation", "---", "", f"{kind} 正文", ""]), encoding="utf-8")
+        (root / "sources" / "conversation").mkdir(parents=True)
+        (root / "sources" / "conversation" / "x.txt").write_text("来源原话", encoding="utf-8")
+        return old
+
+    def test_update_state_versions_decision_record_preserving_kind(self):
+        # decision-policy.md: 旧决定不删、只做版本链. update_state now accepts decision.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = self._seed(root, "decision.test.old", "decision")
+            driver = f"""
+import sys, importlib.util
+from pathlib import Path
+sys.path.insert(0, r"{SCRIPTS}")
+import catalog_utils
+catalog_utils.ROOT = Path(r"{root}")
+catalog_utils.RECORDS = Path(r"{root}") / "memory" / "records"
+catalog_utils.SOURCES = Path(r"{root}") / "sources"
+spec = importlib.util.spec_from_file_location("us", r"{SCRIPTS / 'update_state.py'}")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.ROOT = Path(r"{root}")
+sys.argv = ["update_state.py", "--id", "decision.test.old", "--content", "改主意了", "--source", "sources/conversation/x.txt", "--apply"]
+try:
+    m.main()
+except SystemExit as exc:
+    sys.exit(exc.code if isinstance(exc.code, int) else 0)
+"""
+            result = run_driver(driver)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("status: superseded", old.read_text(encoding="utf-8"))
+            new_files = list((root / "memory" / "records").glob("decision.test.old.*.md"))
+            self.assertEqual(len(new_files), 1)
+            body = new_files[0].read_text(encoding="utf-8")
+            self.assertIn("kind: decision", body)  # preserves kind, not coerced to state
+            self.assertIn("supersedes: decision.test.old", body)
+
+    def test_update_state_still_refuses_entity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root, "entity.test.thing", "entity")
+            driver = f"""
+import sys, importlib.util
+from pathlib import Path
+sys.path.insert(0, r"{SCRIPTS}")
+import catalog_utils
+catalog_utils.ROOT = Path(r"{root}")
+catalog_utils.RECORDS = Path(r"{root}") / "memory" / "records"
+catalog_utils.SOURCES = Path(r"{root}") / "sources"
+spec = importlib.util.spec_from_file_location("us", r"{SCRIPTS / 'update_state.py'}")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.ROOT = Path(r"{root}")
+sys.argv = ["update_state.py", "--id", "entity.test.thing", "--content", "x", "--source", "sources/conversation/x.txt", "--apply"]
+m.main()
+"""
+            result = run_driver(driver)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("entity", result.stderr + result.stdout)
+
 
 class OpenLoopsParsingTests(unittest.TestCase):
     def test_legend_and_closed_loops_are_not_imported_as_followups(self):

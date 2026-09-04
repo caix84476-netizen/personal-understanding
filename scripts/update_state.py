@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Preview or apply a new version of a dynamic state record.
+"""Preview or apply a new version of a dynamic state or decision record.
 
+Decision records share the version chain so 旧决定不删、只做历史（decision-policy）;
+kind and context fields carry over to the new version.
 Default is dry-run. Use --apply only after reviewing the proposed change.
 """
 from __future__ import annotations
@@ -48,8 +50,11 @@ def main() -> int:
     if not matches:
         raise SystemExit(f"No record found for id: {args.id}")
     path, old = matches[0]
-    if old.get("kind") != "state":
-        raise SystemExit(f"Only state records can be versioned by this command: {old.get('kind')}")
+    # decision-policy.md: 旧决定不删、只做版本链。A superseded decision is history
+    # of a choice, not live state — the two kinds share one chain mechanism now.
+    VERSIONABLE_KINDS = {"state", "decision"}
+    if old.get("kind") not in VERSIONABLE_KINDS:
+        raise SystemExit(f"Only {('/'.join(sorted(VERSIONABLE_KINDS)))} records can be versioned by this command: {old.get('kind')}")
     # Hard gate: the source of a new state version must resolve to a real
     # capture or file. "Just write it" is how unanchored drift starts.
     source_resolved = (ROOT / args.source).exists()
@@ -62,11 +67,12 @@ def main() -> int:
     new_id = f"{args.id}.{stamp}"
     new_path = records_dir / f"{new_id}.md"
     carried = []
-    for field in ("domain", "parent_ids", "related_ids", "applies_when"):
+    for field in ("domain", "parent_ids", "related_ids", "applies_when", "phase", "entity_refs"):
         if old.get(field):
             carried.append(f"{field}: {old[field]}")
     carried_text = ("\n" + "\n".join(carried)) if carried else ""
-    content = f"""---\nid: {new_id}\nkind: state\nvalid_from: {args.valid_from or datetime.now().date().isoformat()}\nlast_confirmed: {datetime.now().date().isoformat()}\nstatus: current\nconfidence: {args.confidence}\nsensitivity: {old.get('sensitivity', 'private')}\nsource_refs: {args.source}\nsupersedes: {args.id}{carried_text}\n---\n\n{args.content}\n"""
+    kind = old.get("kind") or "state"
+    content = f"""---\nid: {new_id}\nkind: {kind}\nvalid_from: {args.valid_from or datetime.now().date().isoformat()}\nlast_confirmed: {datetime.now().date().isoformat()}\nstatus: current\nconfidence: {args.confidence}\nsensitivity: {old.get('sensitivity', 'private')}\nsource_refs: {args.source}\nsupersedes: {args.id}{carried_text}\n---\n\n{args.content}\n"""
     issue = next((item for item in audit_records() if item["id"] == args.id), None)
     if args.apply and issue and not args.allow_unresolved_source:
         raise SystemExit(
