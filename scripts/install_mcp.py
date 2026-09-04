@@ -162,9 +162,106 @@ def describe_entry(entry: object) -> str:
     if not isinstance(entry, dict):
         return "not registered"
     args = [str(item) for item in (entry.get("args") or [])]
-    if any(Path(arg) == SERVER for arg in args):
+    # strip quotes before comparing: some clients (or hand-edited configs) store
+    # args with wrapping quotes, and a false "stale" would needlessly rewrite and
+    # trip the hijack guard.
+    if any(Path(arg.strip("'\"")) == SERVER for arg in args):
         return "registered, path matches"
     return "registered, but the path is stale (rerun to self-heal)"
+
+
+def entry_server_path(entry: object) -> str | None:
+    """The mcp_server.py path currently recorded in a JSON config entry."""
+    if not isinstance(entry, dict):
+        return None
+    for arg in (entry.get("args") or []):
+        text = str(arg).strip("'\"")
+        if text.rstrip("\\/").endswith("mcp_server.py"):
+            return text
+    return None
+
+
+def json_entry(path: Path, key_path: tuple[str, ...]) -> object:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    for key in key_path:
+        data = data.get(key) if isinstance(data, dict) else None
+    return data
+
+
+def codex_entry_server_path(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = codex_section_pattern().search(text)
+    if not match:
+        return None
+    for line in match.group(0).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("args"):
+            for token in re.findall(r"['\"]([^'\"]+)['\"]", stripped):
+                if token.rstrip("\\/").endswith("mcp_server.py"):
+                    return token
+    return None
+
+
+def _find_entry(node: object) -> object:
+    """Recursively locate the personal-understanding entry in an arbitrary JSON
+    config so the hijack check works for every mcpServers-JSON client without
+    duplicating each client's key_path."""
+    if isinstance(node, dict):
+        if SERVER_NAME in node and isinstance(node[SERVER_NAME], dict):
+            return node[SERVER_NAME]
+        for value in node.values():
+            found = _find_entry(value)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_entry(value)
+            if found is not None:
+                return found
+    return None
+
+
+def registered_server_path(name: str, path: Path) -> str | None:
+    """The mcp_server.py path this client currently points at, for §6.6 checking."""
+    if name == "codex":
+        return codex_entry_server_path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return entry_server_path(_find_entry(data))
+
+
+def hijack_block_reason(old_path: str | None) -> str:
+    """§6.6: distinguish "the skill tree really moved" from "a copy/sandbox tree
+    is trying to hijack the live registration".
+
+    Self-heal is the designed behavior after a real move — and after a real move
+    the OLD path is gone from disk. If the old registered mcp_server.py still
+    exists elsewhere, this run's tree is a second live copy (backup dir, test
+    sandbox, pasted folder), and rewriting the registration would silently point
+    the user's clients at it (this exact accident happened during the 2.4.1
+    audit). Refuse unless --force says we really mean it.
+    """
+    if not old_path:
+        return ""
+    try:
+        old = Path(old_path).resolve()
+    except OSError:
+        return ""
+    if old == SERVER.resolve():
+        return ""
+    if not old.exists():
+        return ""  # genuine move: the old tree is gone, self-heal as designed
+    return (f"registered server {old} still exists on disk and is not this tree "
+            f"({SERVER}); refusing to redirect. If the skill really moved, delete or "
+            f"archive the old tree first, or pass --force to override.")
 
 
 APPDATA = Path(os.environ.get("APPDATA", HOME / "AppData" / "Roaming"))
@@ -281,6 +378,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", choices=sorted(CLIENTS), help="handle only the given client")
     parser.add_argument("--auto", action="store_true", help="register/update every client with a detected config")
+    parser.add_argument("--force", action="store_true", help="override the §6.6 hijack guard and redirect a registration even though the previously registered tree still exists on disk")
     parser.add_argument("--export-dir", default="", help="write universal config snippets to the given directory (for new clients not covered by the installer, to paste manually)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -305,7 +403,8 @@ def main() -> int:
             if status == "registered, path matches":
                 action = "no-op (already consistent, nothing written)"
             else:
-                action = client["register"](path)
+                block = "" if args.force else hijack_block_reason(registered_server_path(name, path))
+                action = block or client["register"](path)
             report[name] = {"config": str(path), "status": status, "action": action}
         else:
             report[name] = {"config": str(path), "status": status, "action": "(pass --auto to write)"}

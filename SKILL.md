@@ -277,7 +277,7 @@ receipt 是可审计的事实，不是让模型参考一下的提示：`requires
 
 ### 读取入口与 MCP
 
-优先使用 MCP 工具（`personal_catalog`、`personal_retrieve`、`personal_session_check` 等）读写；它们带读取前捕获校验。若当前会话工具列表里没有 `personal_*` 工具，说明本客户端尚未注册本地 MCP 服务：运行 `python scripts/install_mcp.py --auto`（幂等，可重复执行）完成注册后提示用户重启会话；注册前仍可用 CLI 脚本完成同样的工作。
+优先使用 MCP 工具（`personal_catalog`、`personal_retrieve`、`personal_session_check` 等）读写；它们带读取前捕获校验。若当前会话工具列表里没有 `personal_*` 工具，说明本客户端尚未注册本地 MCP 服务：运行 `python scripts/install_mcp.py --auto`（幂等，可重复执行）完成注册后提示用户重启会话；注册前仍可用 CLI 脚本完成同样的工作——但 CLI 读取同样遵守"先捕获再读"（2.5.0 §6.5：`retrieve_v2.py`/`catalog_context.py` 需 `--capture-id`，与 MCP 一致），无对话轮次的维护/测试/审计读取显式声明 `--maintenance`。注意：如果本机存在多份 skill 树（备份、沙盒、粘贴副本），从副本运行 `--auto` 时若旧注册树仍在磁盘会被 §6.6 防劫持护栏拦下并拒绝改注册，确认要切换须显式 `--force`（这防止把用户真实注册静默重指向测试树）。
 
 ## 检索流程：不是把所有东西读完
 
@@ -416,7 +416,7 @@ probe 与 routing 共用同一套加权排序（2.4.1 起，2.5.0 起为 weighte
 - `scripts/rebuild_views.py`：重建旧版兼容视图和 v2 派生视图；
 - `scripts/backup_archive.py`：生成带 SHA256 清单的本地备份，并自动镜像到 `memory/backup-config.json` 指定的第二位置（见 `references/maintenance-and-durability.md`；重要更新后、迁移前、至少每周一次）；
 - `scripts/init_archive.py`：全新安装时初始化档案骨架（目录 + 通用领域分支），首次使用前运行一次（幂等）；
-- `scripts/install_mcp.py`：检测本机各 AI 客户端并注册本地 MCP 服务（幂等；换机器、粘贴 skill 到新客户端后运行一次即可）；
+- `scripts/install_mcp.py`：检测本机各 AI 客户端并注册本地 MCP 服务（幂等；换机器、粘贴 skill 到新客户端后运行一次即可；若检测到多份 skill 树并存，改注册受 §6.6 防劫持护栏约束，须 `--force` 显式确认）；
 - `scripts/mcp_server.py`：本地 MCP 读写入口；
 - `dashboard/`：v2 可视化面板。
 
