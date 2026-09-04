@@ -37,10 +37,16 @@ def run_script(name: str, args: list[str]) -> tuple[int, str]:
 
 def rebuild_and_validate() -> tuple[int, str]:
     rebuild_code, rebuild_output = run_script("rebuild_views.py", [])
-    # Any MCP write is part of a completion-sensitive workflow. A pending
-    # capture must fail the post-write gate instead of being downgraded to a
-    # warning that the model can accidentally ignore.
-    validate_code, validate_output = run_script("validate_memory.py", ["--require-closed-captures"])
+    # Deliberately WITHOUT --require-closed-captures: an MCP write happens in the
+    # middle of a turn, while the current capture is still pending by design.
+    # Counting that normal intermediate state as an error made every successful
+    # write return isError=True (2.4.1 §6.1), which invited blind retries and
+    # duplicate records — the fail-closed-coerces-model-behavior trap. Real
+    # structural failures still surface; the whole-turn closure gate stays where
+    # it belongs: finalize_capture and session_check (same rationale as the
+    # finalize multi-capture fix, 6525299). The pending reminder lives in the
+    # success text below, not as an error flag.
+    validate_code, validate_output = run_script("validate_memory.py", [])
     return max(rebuild_code, validate_code), f"{rebuild_output}\n{validate_output}".strip()
 
 

@@ -133,7 +133,12 @@ class DerivationClosureTests(unittest.TestCase):
         source = (SCRIPTS / "mcp_server.py").read_text(encoding="utf-8")
         self.assertIn("discover_captures(ROOT).get(capture_id)", source)
 
-    def test_mcp_post_write_validation_requires_closed_captures(self):
+    def test_mcp_post_write_validation_does_not_require_closed_captures(self):
+        # §6.1: an MCP write runs mid-turn, while the current capture is still
+        # pending by design. Post-write validation must NOT use
+        # --require-closed-captures, or every successful write false-errors and
+        # invites retries/duplicate records. The explicit personal_validate tool
+        # keeps the closed-capture gate — that is the model's deliberate turn check.
         spec = importlib.util.spec_from_file_location("mcp_server_closure_test", SCRIPTS / "mcp_server.py")
         module = importlib.util.module_from_spec(spec)
         assert spec.loader
@@ -149,7 +154,8 @@ class DerivationClosureTests(unittest.TestCase):
             module.rebuild_and_validate()
             result = module.handle("tools/call", {"name": "personal_validate", "arguments": {}})
 
-        self.assertIn(("validate_memory.py", ["--require-closed-captures"]), calls)
+        self.assertIn(("validate_memory.py", []), calls)
+        self.assertNotIn(("validate_memory.py", ["--require-closed-captures"]), calls)
         self.assertIn(("validate_memory.py", ["--json", "--require-closed-captures"]), calls)
         self.assertFalse(result["isError"])
 

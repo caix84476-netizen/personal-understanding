@@ -129,6 +129,10 @@ class MultiCaptureFinalizeSemanticsTests(unittest.TestCase):
             "summary": "2026-09 正在玩《只狼》，卡在弦一郎。", "tier": "light", "salience": 1,
             "capture_id": "cap.reg.text", "verbatim_refs": "cap.reg.text;cap.reg.img"})
         self.assertNotIn("拒绝写入", result["content"][0]["text"])
+        # §6.1: the write succeeded while cap.reg.text/img are still pending (normal
+        # mid-turn state); it must NOT be reported as isError, or the model retries
+        # and duplicates the record.
+        self.assertFalse(result["isError"], result["content"][0]["text"])
         rc1, out1, err1 = self._run(root, "finalize_capture.py", "--capture-id", "cap.reg.text", "--disposition", "derived", "--reason", "正文闭环")
         self.assertEqual(rc1, 0, f"first finalize must not fail on sibling pending: rc={rc1} err={err1} out={out1[:200]}")
         rc2, _, err2 = self._run(root, "finalize_capture.py", "--capture-id", "cap.reg.img", "--disposition", "derived", "--reason", "附件归档")
