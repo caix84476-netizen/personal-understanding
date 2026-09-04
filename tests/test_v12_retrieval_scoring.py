@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from catalog_utils import term_weights, weighted_match_score, weighted_query_terms
+from catalog_utils import content_terms, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
 
 HAS_ARCHIVE = (ROOT / "memory" / "v2").is_dir()
 
@@ -47,6 +47,46 @@ class TermWeightTests(unittest.TestCase):
         docs = ["哥哥在家", "妈妈在家", "在家吃饭"]
         weights = term_weights(["哥", "在"], docs)
         self.assertLess(weights["在"], 1.0)
+
+    def test_alias_single_char_keeps_multi_char_weight(self):
+        # §4.2: a curated 1-char entity alias (妈) must NOT be demoted to noise;
+        # a stray single char (在) still is. Same docs, same terms — only the
+        # alias set changes the outcome.
+        docs = ["妈妈在家", "在家吃饭", "他在学校"]
+        weights_noise = term_weights(["妈", "在"], docs)
+        weights_alias = term_weights(["妈", "在"], docs, single_char_aliases([{"aliases": ["妈"]}]))
+        self.assertGreater(weights_alias["妈"], weights_noise["妈"])
+        self.assertAlmostEqual(weights_alias["在"], weights_noise["在"])
+
+    def test_single_char_aliases_only_collects_cjk_singles(self):
+        aliases = single_char_aliases([
+            {"aliases": ["妈", "mother", "母亲"]},
+            {"aliases": ["她"]},
+            {"aliases": []},
+        ])
+        self.assertEqual(aliases, {"妈", "她"})
+
+    def test_content_terms_excludes_non_alias_singles(self):
+        content = content_terms(["只狼", "防", "妈"], {"妈"})
+        self.assertEqual(content, {"只狼", "妈"})
+        # a query with no content terms at all demands nothing (all records pass)
+        self.assertEqual(content_terms(["防"], set()), set())
+
+
+class DeepSeedPriorityTests(unittest.TestCase):
+    # 2.5.0 §5.2: a record explicitly requested for deep verification must surface
+    # its own fragments before any neighbor verbatim, even when its evidence is
+    # summary_only — otherwise the 40-slot budget answers a different record.
+    @unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/v2)")
+    def test_seed_summary_only_fragment_outranks_neighbor_verbatim(self):
+        data = subprocess.run([sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--maintenance", "--query", "家里 噪音",
+                               "--level", "deep", "--event-ids", "entry.state.current.home-noise", "--format", "json", "--no-trace"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(data.returncode, 0, data.stderr)
+        fragments = json.loads(data.stdout)["fragments"]
+        self.assertTrue(fragments)
+        self.assertEqual(fragments[0]["id"], "fragment.legacy.state.current.home-noise",
+                         "the queried record's own summary_only fragment must lead the deep output")
 
 
 class WeightedMatchScoreTests(unittest.TestCase):
