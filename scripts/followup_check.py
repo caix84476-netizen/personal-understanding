@@ -43,10 +43,11 @@ def main() -> int:
     ap.add_argument("--resolve", metavar="FOLLOWUP_ID", help="close a follow-up through the official channel instead of listing (2.5.0 §6.3)")
     ap.add_argument("--resolution", choices=("answered", "declined", "resolved"), default="answered", help="closure kind for --resolve")
     ap.add_argument("--note", default="", help="concrete reason for --resolve (required, >=4 chars)")
+    ap.add_argument("--capture-id", default="", help="optionally bind the turn's verbatim capture holding the user's answer (must exist in the ledger)")
     args = ap.parse_args()
     if args.resolve:
         try:
-            closed = resolve_followup(args.resolve, resolution=args.resolution, note=args.note)
+            closed = resolve_followup(args.resolve, resolution=args.resolution, note=args.note, capture_id=args.capture_id)
         except ValueError as exc:
             raise SystemExit(f"拒绝关闭回访：{exc}")
         print(json.dumps({"status": "resolved", "followup": closed}, ensure_ascii=False, indent=2))

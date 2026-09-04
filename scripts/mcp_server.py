@@ -61,7 +61,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         {"name": "personal_finalize_capture", "description": "关闭当前原话捕获的派生闭环。derived 必须已有至少一条双向链接记录；无需派生时必须写具体原因（零新增收场须写明定向查重命中的既有记录）。回答前必须调用。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "disposition": {"type": "string", "enum": ["derived", "no-derivation-needed"]}, "reason": {"type": "string"}}, "required": ["capture_id", "disposition"], "additionalProperties": False}},
         {"name": "personal_derivation_status", "description": "读取 capture→records 闭环状态，检查 pending、孤立捕获和链接漂移。", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
         {"name": "personal_add_followup", "description": "登记有上下文的待回访问题；到期后由个人理解 Skill 主动检查。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "prompt": {"type": "string"}, "context": {"type": "string"}, "due_at": {"type": ["string", "null"]}, "due_rule": {"type": "string"}, "source_refs": {"type": "array", "items": {"type": "string"}}, "priority": {"type": "string", "enum": ["low", "normal", "high"], "default": "normal"}}, "required": ["id", "prompt", "context"], "additionalProperties": False}},
-        {"name": "personal_resolve_followup", "description": "关闭一条回访（answered 回访完成 / declined 用户不再跟进 / resolved 回路以其他方式关闭，含方案被取代或过时）；note 必填且须具体。替代此前无正规通道的过时/污染回访。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "resolution": {"type": "string", "enum": ["answered", "declined", "resolved"]}, "note": {"type": "string"}}, "required": ["id", "resolution", "note"], "additionalProperties": False}},
+        {"name": "personal_resolve_followup", "description": "关闭一条回访（answered 回访完成 / declined 用户不再跟进 / resolved 回路以其他方式关闭，含方案被取代或过时）；note 必填且须具体。可选 capture_id 把本轮用户回答的原话 capture 绑到回访上（须已存在于 ledger）。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "resolution": {"type": "string", "enum": ["answered", "declined", "resolved"]}, "note": {"type": "string"}, "capture_id": {"type": "string"}}, "required": ["id", "resolution", "note"], "additionalProperties": False}},
         {"name": "personal_add_hypothesis", "description": "登记候选因果解释；默认 candidate，不得冒充事实。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "claim": {"type": "string"}, "mechanism": {"type": "string"}, "supports": {"type": "array", "items": {"type": "string"}}, "contradicts": {"type": "array", "items": {"type": "string"}}, "alternatives": {"type": "array", "items": {"type": "string"}}, "scope": {"type": "string"}, "confidence": {"type": "string", "enum": sorted(VALID_CONFIDENCE), "default": "low"}, "source_refs": {"type": "array", "items": {"type": "string"}}}, "required": ["id", "claim", "mechanism"], "additionalProperties": False}},
         {"name": "personal_validate", "description": "校验 v2 结构，并明确区分失败、警告和干净。默认强制要求所有 capture 已完成派生闭环。只读。", "inputSchema": {"type": "object", "properties": {"strict": {"type": "boolean", "default": False}}, "additionalProperties": False}},
         {"name": "personal_add_feedback", "description": "记录一次依赖个人记忆的回答的效果：用了哪些记忆、用户反应说明 helpful/missed/corrected。不需要用户正式打分。", "inputSchema": {"type": "object", "properties": {"feedback_id": {"type": "string"}, "capture_id": {"type": "string"}, "memory_ids": {"type": "string"}, "outcome": {"type": "string", "enum": ["helpful", "missed", "corrected", "unclear"]}, "note": {"type": "string"}}, "required": ["feedback_id", "outcome"], "additionalProperties": False}},
@@ -210,11 +210,12 @@ def add_followup(data: dict[str, Any]) -> dict[str, Any]:
 def resolve_followup_tool(data: dict[str, Any]) -> dict[str, Any]:
     ident = str(data.get("id", "")).strip()
     try:
-        closed = resolve_followup(ident, resolution=str(data.get("resolution", "")).strip(), note=str(data.get("note", "")).strip())
+        closed = resolve_followup(ident, resolution=str(data.get("resolution", "")).strip(), note=str(data.get("note", "")).strip(), capture_id=str(data.get("capture_id", "")).strip())
     except ValueError as exc:
         return text_result(f"拒绝关闭回访：{exc}", error=True)
     code, output = rebuild_and_validate()
-    return text_result(f"已关闭回访：{ident}（{closed['status']}）\n\n{output}", error=code != 0)
+    bound = f"\n已绑定用户回答原话 capture：{closed['answer_capture_id']}" if closed.get("answer_capture_id") else ""
+    return text_result(f"已关闭回访：{ident}（{closed['status']}）{bound}\n\n{output}", error=code != 0)
 
 
 def add_hypothesis(data: dict[str, Any]) -> dict[str, Any]:

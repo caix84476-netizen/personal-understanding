@@ -96,7 +96,7 @@ def loose_followups(rows: list[dict[str, Any]]) -> list[str]:
     return [str(row.get("id", "")) for row in rows
             if row.get("status", "pending") not in FOLLOWUP_CLOSED_STATUSES and loose_followup_fields(row)]
 
-def resolve_followup(followup_id: str, *, resolution: str, note: str = "", root: Path | None = None) -> dict[str, Any]:
+def resolve_followup(followup_id: str, *, resolution: str, note: str = "", capture_id: str = "", root: Path | None = None) -> dict[str, Any]:
     """Close a follow-up through the official channel (2.5.0 §6.3).
 
     Before this existed the only write path was add (MCP), so a follow-up whose
@@ -108,12 +108,24 @@ def resolve_followup(followup_id: str, *, resolution: str, note: str = "", root:
     note is required and must be concrete — closing debts silently is how stale
     promises get laundered. Shared by MCP tool and followup_check CLI so both
     take the exact same mutation path under the lock.
+
+    ``capture_id`` optionally binds the turn whose verbatim holds the user's
+    actual answer (§4.3 leftover): an answered followup used to close with only
+    a model-written note, leaving the user's own words unlinked. Optional on
+    purpose — declined/resolved closures often have no new verbatim at all. When
+    provided it must exist in the ledger, same integrity rule as the CLI read
+    gate; a bogus id is refused rather than silently stored.
     """
     if resolution not in FOLLOWUP_CLOSED_STATUSES:
         raise ValueError(f"resolution 必须是 {'/'.join(sorted(FOLLOWUP_CLOSED_STATUSES))}，收到：{resolution}")
     if len(note.strip()) < 4:
         raise ValueError("关闭回访必须写明具体原因（answered/declined/resolved 的依据）")
+    capture_id = str(capture_id or "").strip()
     base = root or ROOT
+    if capture_id:
+        from derivation_ledger import discover_captures
+        if capture_id not in discover_captures(base):
+            raise ValueError(f"capture_id 不存在：{capture_id}。先保存原话，或不传 capture_id 直接关闭。")
     path = base / "memory" / "v2" / "followups.jsonl"
     with mutation_lock(base):
         rows = [row for row in jsonl_read(path) if "_parse_error" not in row]
@@ -122,7 +134,10 @@ def resolve_followup(followup_id: str, *, resolution: str, note: str = "", root:
             raise ValueError(f"followup 不存在：{followup_id}")
         if not followup_open(target):
             raise ValueError(f"followup 已是关闭状态（{target.get('status')}），不重复关闭")
-        target.update({"status": resolution, "resolved_at": datetime.now().astimezone().isoformat(timespec="seconds"), "resolution_note": note.strip()})
+        stamp = {"status": resolution, "resolved_at": datetime.now().astimezone().isoformat(timespec="seconds"), "resolution_note": note.strip()}
+        if capture_id:
+            stamp["answer_capture_id"] = capture_id
+        target.update(stamp)
         jsonl_write(path, rows)
     return target
 

@@ -364,6 +364,37 @@ class FollowupResolveTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 resolve_followup("followup.demo.missing", resolution="answered", note="理由够长了", root=root)
 
+    def test_resolve_binds_existing_answer_capture(self):
+        from derivation_ledger import register_capture
+        from v2_archive import resolve_followup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = self._seed(root, "followup.demo.stale")
+            write_capture(root, "capture.test.answer")
+            register_capture("capture.test.answer", source_path="sources/conversation/capture.test.answer.txt", root=root)
+            closed = resolve_followup("followup.demo.stale", resolution="answered", note="用户原话说已经办妥", capture_id="capture.test.answer", root=root)
+            self.assertEqual(closed["answer_capture_id"], "capture.test.answer")
+            stored = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(stored["answer_capture_id"], "capture.test.answer")
+
+    def test_resolve_refuses_bogus_capture_id(self):
+        from v2_archive import resolve_followup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root, "followup.demo.stale")
+            with self.assertRaises(ValueError):
+                resolve_followup("followup.demo.stale", resolution="answered", note="理由必须具体", capture_id="capture.test.missing", root=root)
+
+    def test_resolve_without_capture_id_stays_clean(self):
+        # declined/resolved closures often have no new verbatim; an absent
+        # capture_id must not leave an empty answer_capture_id key behind.
+        from v2_archive import resolve_followup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root, "followup.demo.stale")
+            closed = resolve_followup("followup.demo.stale", resolution="declined", note="用户明确不再跟进", root=root)
+            self.assertNotIn("answer_capture_id", closed)
+
     def test_resolve_is_idempotent_guarded_and_starters_drop_it(self):
         from v2_archive import resolve_followup
         with tempfile.TemporaryDirectory() as tmp:
