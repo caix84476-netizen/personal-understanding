@@ -149,14 +149,26 @@ def main() -> int:
     selected_facets = [row for row in facets if set(row.get("entry_refs", [])) & event_ids or row.get("entity_id") in entity_ids or set(row.get("entity_ids", [])) & entity_ids]
     selected_facets = selected_facets[:40]
     selected_fragment_ids = set()
+    seed_fragment_ids: set[str] = set()
     for row in selected_events:
-        selected_fragment_ids.update(row.get("fragment_refs", []))
+        refs = set(row.get("fragment_refs", []))
+        selected_fragment_ids.update(refs)
+        if row.get("id") in explicit_events or row.get("record_id") in explicit_events:
+            seed_fragment_ids.update(refs)
     for row in selected_entities:
-        selected_fragment_ids.update(row.get("fragment_refs", []))
+        refs = set(row.get("fragment_refs", []))
+        selected_fragment_ids.update(refs)
+        if row.get("id") in explicit_entities:
+            seed_fragment_ids.update(refs)
     for row in selected_knowledge:
         selected_fragment_ids.update(row.get("fragment_refs", []))
     selected_fragments = [fragments[fid] for fid in selected_fragment_ids if fid in fragments]
-    selected_fragments.sort(key=lambda row: (row.get("fidelity") != "verbatim", row.get("id", "")))
+    # Deep means "go verify against the original words". The record the model
+    # explicitly asked to verify outranks any neighbor's fragments, even when its
+    # own evidence is summary_only — otherwise a legacy record's single fragment
+    # gets crowded out of the 40-slot budget by the linked entities' verbatim
+    # pool and deep answers a different record than the one queried.
+    selected_fragments.sort(key=lambda row: (row.get("id") not in seed_fragment_ids, row.get("fidelity") != "verbatim", row.get("id", "")))
     if args.level == "probe": selected_fragments = []
     else: selected_fragments = selected_fragments[: args.max_fragments]
     followups = data.get("followups", [])
