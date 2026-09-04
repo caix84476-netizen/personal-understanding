@@ -124,6 +124,36 @@ class DerivationClosureTests(unittest.TestCase):
             (root / "memory" / "records" / "event.gone.demo.md").unlink()
             repair_ledger(root)
             self.assertEqual(load_ledger(root)["cap.gone.att"]["status"], "pending")
+
+    def test_repair_never_flips_no_derivation_capture(self):
+        # §6.10 root cause: repair must reconcile links, not launder an explicit
+        # no-derivation-needed disposition into derived because records merely
+        # co-reference the capture's source_path.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_image_capture(root, "cap.att.nd")
+            rid = write_record(root, "event.att.sibling", "cap.att.nd")
+            register_capture("cap.att.nd", source_path="sources/images/cap.att.nd.png", root=root)
+            finalize_capture("cap.att.nd", "no-derivation-needed", "查重零新增：截图内容已由既有记录覆盖", root=root)
+            self.assertEqual(load_ledger(root)["cap.att.nd"]["status"], "no-derivation-needed")
+            repair_ledger(root)
+            self.assertEqual(load_ledger(root)["cap.att.nd"]["status"], "no-derivation-needed")
+
+    def test_repair_drops_stale_text_capture_links(self):
+        # Text captures trust record frontmatter: a ledger entry carrying extra
+        # declared links the records no longer assert is drift and must clear.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_capture(root, "cap.text.turn")
+            write_record(root, "event.text.a", "cap.text.turn")
+            register_capture("cap.text.turn", source_path="sources/conversation/cap.text.turn.txt", root=root)
+            link_record("cap.text.turn", "event.text.a", root=root)
+            link_record("cap.text.turn", "event.text.ghost", root=root)  # never in any record frontmatter
+            finalize_capture("cap.text.turn", "derived", "派生闭环", root=root)
+            self.assertEqual(load_ledger(root)["cap.text.turn"]["record_ids"], ["event.text.a", "event.text.ghost"])
+            repair_ledger(root)
+            self.assertEqual(load_ledger(root)["cap.text.turn"]["record_ids"], ["event.text.a"])
+            self.assertEqual(load_ledger(root)["cap.text.turn"]["status"], "derived")
     def test_capture_registration_is_pending_and_audited(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

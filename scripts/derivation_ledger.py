@@ -105,26 +105,45 @@ def finalize_capture(capture_id: str, disposition: str, reason: str = "", *, roo
         from turn_receipts import mark_closed_for_capture
         mark_closed_for_capture(capture_id, disposition, root); return entry
 
+def _is_attachment(meta: dict[str, Any]) -> bool:
+    return str(meta.get("message_kind") or "") == "image-attachment" or str(meta.get("source_path") or "").startswith("sources/images")
+
+
 def repair_ledger(root: Path = DEFAULT_ROOT) -> dict[str, int]:
     """Rebuild the projection from immutable captures and record references.
 
-    Trust direction: record verbatim_refs/source_refs are the primary truth, but an
-    attachment capture's link lives ONLY in the ledger (link_record never rewrites the
-    record frontmatter), so a pure records→ledger rebuild would silently drop it and
-    re-open a finalized attachment capture (§6.2). We therefore union the record-derived
-    links with the ledger's already-declared links — keeping a declared link only while
-    its target record still exists, so repair can still purge links to deleted records.
+    Trust rules (2.5.0, resolving the §6.2 vs §6.10 tension the audit doc left
+    as two separate defects):
+
+    - A record's verbatim_refs/source_refs are authoritative for TEXT captures, so
+      a text capture's ids come straight from record_capture_links; any ledger-only
+      extra is stale drift and is dropped (§6.10).
+    - An ATTACHMENT capture's derivation link is written only to the ledger
+      (link_record never touches record frontmatter), so rebuilding text-only would
+      silently drop it and re-open a finalized capture (§6.2). For attachments we
+      union the record-derived links with the ledger's declared links whose target
+      record still exists (so links to deleted records are still purged).
+    - A closed disposition is authoritative: repair reconciles LINKS, never flips
+      a capture that was finalized as no-derivation-needed just because source_path
+      co-occurrence made records look "linked". Only captures that end up with no
+      valid anchor reopen to pending.
     """
     with mutation_lock(root):
         captures = discover_captures(root); linked, _ = record_capture_links(root); old = load_ledger(root); rebuilt: dict[str, dict[str, Any]] = {}; created = 0
         record_ids = {parse_frontmatter(p).get("id") for p in (root / "memory" / "records").glob("*.md")}
         for cid, meta in captures.items():
             created += int(cid not in old); prior = old.get(cid, _entry(cid, meta))
-            declared = {x for x in prior.get("record_ids", []) if x in record_ids}
-            ids = sorted(linked.get(cid, set()) | declared)
-            if ids: status, reason = "derived", prior.get("finalization_reason") or "repair: linked record discovered"
-            elif prior.get("status") == "no-derivation-needed": status, reason = "no-derivation-needed", prior.get("finalization_reason")
-            else: status, reason = "pending", None
+            declared_alive = {x for x in prior.get("record_ids", []) if x in record_ids}
+            if _is_attachment(meta):
+                ids = sorted(linked.get(cid, set()) | declared_alive)
+            else:
+                ids = sorted(linked.get(cid, set()))
+            if prior.get("status") == "no-derivation-needed":
+                status, reason = "no-derivation-needed", prior.get("finalization_reason")
+            elif ids:
+                status, reason = "derived", prior.get("finalization_reason") or "repair: linked record discovered"
+            else:
+                status, reason = "pending", None
             prior.update({"record_ids": ids, "status": status, "finalization_reason": reason}); rebuilt[cid] = prior
         _commit(rebuilt, root, "ledger-repaired")
         return {"captures": len(captures), "created": created, "repaired": len(rebuilt), "pending": sum(x["status"] == "pending" for x in rebuilt.values())}
