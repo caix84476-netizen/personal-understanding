@@ -8,8 +8,37 @@ import argparse, json, sys
 from pathlib import Path
 from followup_check import check_followups
 from turn_receipts import classify_personal_turn, create_receipt
+from v2_archive import load_v2
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def state_snapshot() -> dict[str, object]:
+    """Compact current-state snapshot for the low-signal fast path (2.5.0 §8).
+
+    SKILL.md told the model to pick an entry point from "due follow-ups + the
+    current-state snapshot in preflight output", but preflight never emitted any
+    snapshot — the promised degraded read was half missing, so low-signal turns
+    had to run a full survey or answer bare. Compact cards only (title + short
+    summary); full detail stays behind catalog_context/retrieve_v2.
+    """
+    try:
+        state = load_v2().get("current_state", {})
+    except Exception:
+        return {"available": False}
+    def cards(items: list, limit: int) -> list[dict[str, str]]:
+        out = []
+        for item in (items or [])[:limit]:
+            out.append({"id": item.get("id"), "title": item.get("title"), "summary": (str(item.get("summary") or ""))[:60]})
+        return out
+    return {
+        "available": True,
+        "as_of": state.get("as_of"),
+        "core": cards(state.get("core"), 6),
+        "tensions": cards(state.get("tensions"), 6),
+        "conditions": cards(state.get("conditions"), 6),
+    }
+
 
 def classify_signal(text: str) -> dict[str, object]:
     decision = classify_personal_turn(text)
@@ -61,6 +90,10 @@ def main() -> int:
             "archive_audit": {"enabled": True, "version": "2.0.0"},
         },
         "followups": check_followups(),
+        # The low-signal fast path reads "due follow-ups + current-state snapshot"
+        # (SKILL.md 低信号降级读取); the snapshot was the missing half. Attached
+        # only when the turn is personal-required, so skip-tier preflights stay lean.
+        "current_state_snapshot": state_snapshot() if required else {"available": False, "reason": "turn not personal-required"},
         "review_alert": review_alert,
         "auto_review": auto_review,
         "policy": "receipt 是可校验事实：requires_personal_understanding=true 时，capture、finalize、session_check 缺一项即不得结束或声称已更新。",

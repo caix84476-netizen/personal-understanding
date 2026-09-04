@@ -143,6 +143,30 @@ class FootprintClosureTests(unittest.TestCase):
             create_receipt("帮我看看买哪个手机", turn_id="turn.skip.gate", tier="skip", root=root)
             self.assertTrue(audit_turn("turn.skip.gate", root)["pass"])
 
+    def test_preflight_personal_turn_carries_low_signal_snapshot(self):
+        # §8: the low-signal fast path is documented as reading "due follow-ups +
+        # current-state snapshot" from preflight output. A personal-required turn
+        # must literally carry that snapshot; a skip/non-personal turn stays lean.
+        sys.path.insert(0, str(ROOT / "tests"))
+        from _fixture import make_temp_repo
+        root = make_temp_repo(Path(tempfile.mkdtemp(prefix="pu-preflight-")))
+        proc = subprocess.run(
+            [sys.executable, str(root / "scripts" / "preflight_context.py"), "最近有点烦", "--tier", "full",
+             "--turn-id", "turn.snap.personal", "--root", str(root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(proc.returncode, 0, proc.stderr[-300:])
+        data = json.loads(proc.stdout)
+        self.assertIn("current_state_snapshot", data)
+        self.assertTrue(data["current_state_snapshot"]["available"])
+        self.assertIn("followups", data)
+        # skip-tier turn does not pay for the snapshot
+        proc2 = subprocess.run(
+            [sys.executable, str(root / "scripts" / "preflight_context.py"), "帮我看看买哪个手机", "--tier", "skip",
+             "--turn-id", "turn.snap.skip", "--root", str(root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        data2 = json.loads(proc2.stdout)
+        self.assertFalse(data2["current_state_snapshot"]["available"])
+
 
 class MultiCaptureFinalizeSemanticsTests(unittest.TestCase):
     """正文+附件的轻量轮：finalize 的退出码不得把"兄弟 capture 未关闭"误报成本次失败。"""

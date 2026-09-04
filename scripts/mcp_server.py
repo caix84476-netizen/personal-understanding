@@ -9,6 +9,7 @@ from derivation_ledger import audit_ledger, discover_captures, finalize_capture,
 from v2_archive import resolve_followup, skill_version, write_text_atomic
 from storage import atomic_write_bytes, atomic_write_text, mutation_lock
 from turn_receipts import create_receipt, mark_captured, read_receipt
+from followup_check import check_followups
 from cli_runtime import configure_utf8_stdio
 
 # MCP frames are UTF-8 JSON-RPC by spec; never trust the console code page (GBK/cp1252).
@@ -246,9 +247,20 @@ def handle(method: str, params: dict[str, Any]) -> Any:
             if not isinstance(text, str): return text_result("text 必须是字符串。", error=True)
             tier = str(args.get("tier") or "auto")
             try:
-                receipt = create_receipt(text, turn_id=str(args.get("turn_id") or "") or None, conversation_id=str(args.get("conversation_id") or "") or None, tier=tier, root=ROOT)
+                receipt = create_receipt(text, turn_id=str(args.get("turn_id", "") or "") or None, conversation_id=str(args.get("conversation_id", "") or "") or None, tier=tier, root=ROOT)
             except ValueError as exc: return text_result(f"preflight 失败：{exc}", error=True)
-            return text_result(json.dumps(receipt, ensure_ascii=False, indent=2))
+            # §8: the low-signal fast path promises "pick an entry from the due
+            # follow-ups + current-state snapshot in the preflight output" — make
+            # that literally true on the MCP path too, matching preflight_context.py.
+            # Personal-required turns get the bundle; others stay lean (just the
+            # receipt) so skip-tier turns pay no extra tokens.
+            payload: dict[str, Any] = {"turn_receipt": receipt}
+            if receipt.get("requires_personal_understanding"):
+                from preflight_context import state_snapshot
+                checks = check_followups()
+                payload["followups"] = {"due": checks["due"], "undated_pending": checks["undated_pending"]}
+                payload["current_state_snapshot"] = state_snapshot()
+            return text_result(json.dumps(payload, ensure_ascii=False, indent=2))
         if name == "personal_catalog":
             ok, message = require_capture(args)
             if not ok: return text_result(message, error=True)
