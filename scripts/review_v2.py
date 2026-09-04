@@ -43,6 +43,12 @@ def report(deep: bool = False) -> dict:
         feedback_summary = miss_summary(feedback)
         if feedback_summary["missed_or_corrected"]:
             warnings.append({"code": "feedback-miss-streak", "missed_or_corrected": feedback_summary["missed_or_corrected"], "worst_memory_ids": feedback_summary["worst_memory_ids"], "note": "These memories were repeatedly used in answers and then corrected or flagged as misses; verify them first during deep review."})
+        # review-and-feedback-loops wants each entry anchored to the current turn's
+        # capture; unanchored entries are audit-flagged (warning), never refused on
+        # write (constraint #1).
+        unanchored = [row.get("id") for row in feedback if not row.get("capture_id")]
+        if unanchored:
+            warnings.append({"code": "feedback-without-capture-anchor", "count": len(unanchored), "ids": unanchored[:12], "note": "这些反馈没有绑定当轮 capture_id：下次记录反馈时先捕获原话；已有无锚点条目保留不动。"})
     # Compare the old archive to the v2 generated views.
     old_records = load_records(); legacy_current = sum(row["meta"].get("status") == "current" for row in old_records)
     high_weight = [row for row in events if int(row.get("salience", 0)) >= 2]
