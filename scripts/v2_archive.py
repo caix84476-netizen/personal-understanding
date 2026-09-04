@@ -74,6 +74,28 @@ def followup_is_due(row: dict[str, Any], today: str | None = None) -> bool:
 
 FOLLOWUP_CLOSED_STATUSES = {"answered", "declined", "resolved"}
 
+
+def loose_followup_fields(row: dict[str, Any]) -> list[str]:
+    """回访政策（timeline-and-followup-policy）：每条回访必带来源与到期规则。
+
+    Returns the missing fields of one followup row — source_refs and/or an expiry
+    (due_at/due_rule) — as input for the write-path reminder and the audit warning.
+    Audit-only by design (hard constraint #1): the write path reminds, it never
+    refuses; existing entries are flagged, never retroactively rewritten.
+    """
+    missing: list[str] = []
+    if not row.get("source_refs"):
+        missing.append("source_refs（来源）")
+    if not row.get("due_at") and not row.get("due_rule"):
+        missing.append("due_at/due_rule（到期规则）")
+    return missing
+
+
+def loose_followups(rows: list[dict[str, Any]]) -> list[str]:
+    """IDs of open followups missing source refs or any expiry info."""
+    return [str(row.get("id", "")) for row in rows
+            if row.get("status", "pending") not in FOLLOWUP_CLOSED_STATUSES and loose_followup_fields(row)]
+
 def resolve_followup(followup_id: str, *, resolution: str, note: str = "", root: Path | None = None) -> dict[str, Any]:
     """Close a follow-up through the official channel (2.5.0 §6.3).
 

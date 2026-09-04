@@ -6,7 +6,7 @@ import hashlib, json, os, re, subprocess, sys
 from pathlib import Path
 from typing import Any
 from derivation_ledger import audit_ledger, discover_captures, finalize_capture, link_record, register_capture
-from v2_archive import resolve_followup, skill_version, write_text_atomic
+from v2_archive import loose_followup_fields, resolve_followup, skill_version, write_text_atomic
 from storage import atomic_write_bytes, atomic_write_text, mutation_lock
 from turn_receipts import create_receipt, mark_captured, read_receipt
 from followup_check import check_followups
@@ -199,7 +199,12 @@ def add_followup(data: dict[str, Any]) -> dict[str, Any]:
         rows.append({"id": ident, "prompt": prompt, "context": context, "status": "pending", "due_at": data.get("due_at"), "due_rule": data.get("due_rule") or "next-relevant-activation", "source_refs": data.get("source_refs") or [], "created_at": dt.date.today().isoformat(), "last_checked_at": None, "snooze_until": None, "priority": data.get("priority") or "normal"})
         payload = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in sorted(rows, key=lambda row: row["id"]))
         write_text_atomic(path, payload)
-    code, output = rebuild_and_validate(); return text_result(f"已登记待回访：{ident}\n\n{output}", error=code != 0)
+    code, output = rebuild_and_validate()
+    # Policy wants every followup to carry source refs and an expiry rule; remind on
+    # the way out instead of refusing the write (audit-only stance, hard constraint #1).
+    missing_fields = loose_followup_fields(data)
+    reminder = f"\n\n提醒：本条缺 {'、'.join(missing_fields)}；回访政策要求每条必带来源与到期规则，下次登记请补全。" if missing_fields else ""
+    return text_result(f"已登记待回访：{ident}{reminder}\n\n{output}", error=code != 0)
 
 
 def resolve_followup_tool(data: dict[str, Any]) -> dict[str, Any]:

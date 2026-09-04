@@ -5,7 +5,7 @@ from cli_runtime import configure_utf8_stdio
 configure_utf8_stdio()
 import argparse, json
 from collections import Counter
-from v2_archive import followup_is_due, load_v2, v2_audit
+from v2_archive import followup_is_due, load_v2, loose_followups, v2_audit
 from catalog_utils import ROOT, load_records, split_ids
 from derivation_ledger import audit_ledger
 from record_feedback import read_feedback, miss_summary
@@ -29,6 +29,8 @@ def report(deep: bool = False) -> dict:
     if unresolved: warnings.append({"code": "relation-unresolved", "count": len(unresolved), "sample": [row.get("id") for row in unresolved[:12]]})
     due = [row for row in followups if followup_is_due(row)]
     if due: warnings.append({"code": "followups-due", "count": len(due), "ids": [row.get("id") for row in due]})
+    loose = loose_followups(followups)
+    if loose: warnings.append({"code": "followup-without-source-or-rule", "count": len(loose), "ids": loose[:12], "note": "回访政策要求每条必带来源与到期规则；缺项回访容易变成无法核对的悬空提醒。下次登记补全即可，不追溯改写已有条目。"})
     if not hypotheses: warnings.append({"code": "hypothesis-layer-empty", "note": "Having no candidate causal hypotheses is not an error; generate them only when an explanation is needed."})
     # causal-hypothesis-policy.md wants ≥2 supports per hypothesis. That is an
     # AUDIT warning, not a write gate (hard constraint #1): blocking MCP
