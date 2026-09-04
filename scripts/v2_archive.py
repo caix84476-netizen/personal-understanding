@@ -72,6 +72,39 @@ def followup_is_due(row: dict[str, Any], today: str | None = None) -> bool:
     return bool(followup_open(row) and day and day <= (today or date.today().isoformat()))
 
 
+FOLLOWUP_CLOSED_STATUSES = {"answered", "declined", "resolved"}
+
+def resolve_followup(followup_id: str, *, resolution: str, note: str = "", root: Path | None = None) -> dict[str, Any]:
+    """Close a follow-up through the official channel (2.5.0 §6.3).
+
+    Before this existed the only write path was add (MCP), so a follow-up whose
+    plan was superseded (e.g. the three-tier sync question replaced by the two-tier
+    reform) stayed pending forever and kept polluting conversation_starters and
+    preflight due lists. Resolution is answered (回访完成) / declined (用户明确
+    不再跟进) / resolved (回路以其他方式关闭，含被后续决定取代或过时). The status
+    words match the filter in conversation_starters.open_followups exactly. The
+    note is required and must be concrete — closing debts silently is how stale
+    promises get laundered. Shared by MCP tool and followup_check CLI so both
+    take the exact same mutation path under the lock.
+    """
+    if resolution not in FOLLOWUP_CLOSED_STATUSES:
+        raise ValueError(f"resolution 必须是 {'/'.join(sorted(FOLLOWUP_CLOSED_STATUSES))}，收到：{resolution}")
+    if len(note.strip()) < 4:
+        raise ValueError("关闭回访必须写明具体原因（answered/declined/resolved 的依据）")
+    base = root or ROOT
+    path = base / "memory" / "v2" / "followups.jsonl"
+    with mutation_lock(base):
+        rows = [row for row in jsonl_read(path) if "_parse_error" not in row]
+        target = next((row for row in rows if row.get("id") == followup_id), None)
+        if target is None:
+            raise ValueError(f"followup 不存在：{followup_id}")
+        if not followup_open(target):
+            raise ValueError(f"followup 已是关闭状态（{target.get('status')}），不重复关闭")
+        target.update({"status": resolution, "resolved_at": datetime.now().astimezone().isoformat(timespec="seconds"), "resolution_note": note.strip()})
+        jsonl_write(path, rows)
+    return target
+
+
 def jsonl_read(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []

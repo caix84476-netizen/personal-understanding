@@ -5,7 +5,7 @@ from cli_runtime import configure_utf8_stdio
 configure_utf8_stdio()
 import argparse, json
 from datetime import date, datetime, timedelta
-from v2_archive import followup_due_day, followup_open, load_v2
+from v2_archive import followup_due_day, followup_open, load_v2, resolve_followup
 
 
 def parse_day(value: str | None) -> date | None:
@@ -40,7 +40,17 @@ def main() -> int:
     ap.add_argument("--as-of", default="")
     ap.add_argument("--horizon", type=int, default=3, help="upcoming window in days; default 3, 0 disables upcoming reminders")
     ap.add_argument("--format", choices={"json", "markdown"}, default="json")
+    ap.add_argument("--resolve", metavar="FOLLOWUP_ID", help="close a follow-up through the official channel instead of listing (2.5.0 §6.3)")
+    ap.add_argument("--resolution", choices=("answered", "declined", "resolved"), default="answered", help="closure kind for --resolve")
+    ap.add_argument("--note", default="", help="concrete reason for --resolve (required, >=4 chars)")
     args = ap.parse_args()
+    if args.resolve:
+        try:
+            closed = resolve_followup(args.resolve, resolution=args.resolution, note=args.note)
+        except ValueError as exc:
+            raise SystemExit(f"拒绝关闭回访：{exc}")
+        print(json.dumps({"status": "resolved", "followup": closed}, ensure_ascii=False, indent=2))
+        return 0
     result = check_followups(args.as_of or None, args.horizon)
     if args.format == "markdown":
         print("# Follow-up check\n")

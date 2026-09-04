@@ -234,6 +234,8 @@ verbatim fragment
 这件事后来怎么样？
 ```
 
+回访必须有正规关闭通道（2.5.0 §6.3），不要用"放着不管"代替关闭：用户回复了用 `answered`，用户明确不再跟进用 `declined`，方案被后续决定取代或本就过时用 `resolved`；三种都要 `note` 写具体依据。CLI 走 `followup_check.py --resolve <id> --resolution <kind> --note "<理由>"`，MCP 走 `personal_resolve_followup`。被取代或作废的回访若不关闭会持续污染对话入口和到期清单。
+
 如果发现当前消息和档案存在矛盾，也要把冲突的两条事实、日期、来源和差异列出来，再询问用户；禁止没头没尾地突然追问。
 
 ## 引导开场：用户不知道要讲什么时

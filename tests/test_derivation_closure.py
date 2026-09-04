@@ -299,5 +299,54 @@ class DerivationClosureTests(unittest.TestCase):
         self.assertEqual(infer_entity_type("entity.place.example-lake", "lake"), "place")
 
 
+class FollowupResolveTests(unittest.TestCase):
+    """§6.3: a proper close channel for follow-ups that outlive their plan."""
+
+    def _seed(self, root: Path, followup_id: str, status: str = "pending") -> Path:
+        folder = root / "memory" / "v2"
+        folder.mkdir(parents=True, exist_ok=True)
+        row = {"id": followup_id, "prompt": "回访？", "context": "背景", "status": status,
+               "due_at": None, "due_rule": "next-relevant-activation", "source_refs": [],
+               "created_at": "2026-09-03", "last_checked_at": None, "snooze_until": None, "priority": "normal"}
+        (folder / "followups.jsonl").write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+        return folder / "followups.jsonl"
+
+    def test_resolve_closes_and_stamps_note(self):
+        from v2_archive import resolve_followup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = self._seed(root, "followup.demo.stale")
+            closed = resolve_followup("followup.demo.stale", resolution="resolved", note="方案被两档制改革取代", root=root)
+            self.assertEqual(closed["status"], "resolved")
+            self.assertEqual(closed["resolution_note"], "方案被两档制改革取代")
+            stored = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(stored["status"], "resolved")
+
+    def test_resolve_requires_concrete_note_and_valid_kind(self):
+        from v2_archive import resolve_followup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root, "followup.demo.stale")
+            with self.assertRaises(ValueError):
+                resolve_followup("followup.demo.stale", resolution="resolved", note="x", root=root)
+            with self.assertRaises(ValueError):
+                resolve_followup("followup.demo.stale", resolution="obsolete", note="理由够长了", root=root)
+            with self.assertRaises(ValueError):
+                resolve_followup("followup.demo.missing", resolution="answered", note="理由够长了", root=root)
+
+    def test_resolve_is_idempotent_guarded_and_starters_drop_it(self):
+        from v2_archive import resolve_followup
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root, "followup.demo.stale")
+            resolve_followup("followup.demo.stale", resolution="answered", note="用户回复了跟进", root=root)
+            with self.assertRaises(ValueError):
+                resolve_followup("followup.demo.stale", resolution="answered", note="再次关闭", root=root)
+            # conversation_starters.open_followups must no longer surface the closed loop
+            import conversation_starters
+            conversation_starters.ROOT = root
+            self.assertEqual([x for x in conversation_starters.open_followups() if x.get("id") == "followup.demo.stale"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
