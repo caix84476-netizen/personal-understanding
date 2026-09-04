@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Legacy deterministic retrieval for explicit query fallback.
+"""[DEPRECATED since v2.5.0 §6.8] Legacy deterministic retrieval for explicit query fallback.
 
-Normal activation is model-led: use ``preflight_context.py`` followed by
-``catalog_context.py`` and ``retrieve_context.py``. This script remains useful
-for exact keyword fallback and regression probes, but fixed proactive cues are
-not part of the default runtime path.
+Not part of the two-tier runtime. Normal reads go through retrieve_v2.py (probe/
+deep) and catalog_context.py, which share the weighted-IDF scorer; this script
+returns the old core/evidence structure that does not match v2 projections, so
+the model must not use it as a read entry. Kept only for exact keyword-fallback
+debugging and regression probes. Fixed proactive cues are off by default, and
+references/proactive-cues.json holds English trigger words that never match
+Chinese input — re-enabling --legacy-proactive requires translating it first.
+Removal candidate after one release cycle of confirming nothing depends on it.
 """
 from __future__ import annotations
 from cli_runtime import configure_utf8_stdio

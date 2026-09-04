@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Load personal context with bounded, model-led contextual expansion.
+"""[DEPRECATED since v2.5.0 §6.8] Load personal context with bounded, model-led contextual expansion.
 
-The model still decides what is relevant. Record IDs are seeds, not a hard
-context boundary: probe exposes a compact neighborhood for cross-domain
-checking; deep loads evidence, conflict, replacement, and temporal neighbors.
+This is the 2.0-compat interface; retrieve_v2.py is the v2 probe/deep the
+two-tier runtime actually uses (weighted-IDF scoring, capture gate, traces).
+Structure here is `retrieval_version: 2.0.0-compat` and does not match v2
+projections — do not use as a model read entry; kept for compatibility only.
+Removal candidate after one release cycle of confirming nothing depends on it.
 """
 from __future__ import annotations
 

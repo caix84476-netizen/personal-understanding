@@ -418,6 +418,7 @@ probe 与 routing 共用同一套加权排序（2.4.1 起，2.5.0 起为 weighte
 - `scripts/init_archive.py`：全新安装时初始化档案骨架（目录 + 通用领域分支），首次使用前运行一次（幂等）；
 - `scripts/install_mcp.py`：检测本机各 AI 客户端并注册本地 MCP 服务（幂等；换机器、粘贴 skill 到新客户端后运行一次即可；若检测到多份 skill 树并存，改注册受 §6.6 防劫持护栏约束，须 `--force` 显式确认）；
 - `scripts/mcp_server.py`：本地 MCP 读写入口；
+- **弃用兼容层（勿作读取入口）**：`scripts/query_context.py`（旧 core/evidence 结构 + 英文触发词的 legacy proactive cues）、`scripts/retrieve_context.py`（2.0-compat 检索接口）。它们与 v2 不是同一套，只为回归调试保留，读取一律走 `catalog_context.py` + `retrieve_v2.py`；`references/proactive-cues.json` 是英文触发词且默认关闭，任何人要重新启用须先翻译成中文，否则匹配不了中文输入。一个发布周期确认无依赖后可整层删除。（注意：`review_context.py` 不是这一层——它是 review 系统 `review_skill` 的活依赖，别误删。）
 - `dashboard/`：v2 可视化面板。
 
 ### 维护原则
