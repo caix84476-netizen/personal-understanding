@@ -38,10 +38,16 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, str], str]:
 
 
 def split_ids(value: str | None) -> list[str]:
+    # LLM-written frontmatter sometimes uses JSON array form (["a", "b"]) instead
+    # of the canonical a; b; c. Normalize it away instead of leaving bracket/quote
+    # debris tokens that resolve to nothing and masquerade as dangling links.
+    raw = (value or "").strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
     return [
-        item.strip()
-        for item in re.split(r"[;,]", value or "")
-        if item.strip() and item.strip().lower() not in {"none", "null"}
+        item.strip().strip("'\"").strip()
+        for item in re.split(r"[;,]", raw)
+        if item.strip().strip("'\"").strip() and item.strip().strip("'\"").strip().lower() not in {"none", "null"}
     ]
 
 

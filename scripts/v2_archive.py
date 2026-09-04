@@ -388,7 +388,13 @@ def build_entities(rows: list[dict[str, Any]], fragments: list[dict[str, Any]], 
 
 
 def entity_refs_for(meta: dict[str, str], body: str, entity_by_id: dict[str, dict[str, Any]]) -> list[str]:
-    """Alias matches plus explicitly declared entity_refs, resolved through redirects."""
+    """Alias matches plus explicitly declared entity_refs, resolved through redirects.
+
+    Declared refs that resolve to no entity are DROPPED here but surfaced via
+    unresolved_referents + the entity-ref-dangling audit warning (2.5.0): silently
+    discarding them made the entry-entity-orphan check structurally impossible to
+    fire, and dangling links became invisible drift.
+    """
     text = f"{meta.get('id', '')} {meta.get('aliases', '')} {body}"
     refs = {entity_id for entity_id, entity in entity_by_id.items() if any(alias_matches(text, alias) for alias in entity.get("aliases", []))}
     for declared in split_ids(meta.get("entity_refs")):
@@ -398,6 +404,17 @@ def entity_refs_for(meta: dict[str, str], body: str, entity_by_id: dict[str, dic
     return sorted(refs)
 
 
+def unresolved_entity_refs(meta: dict[str, str], entity_by_id: dict[str, Any]) -> list[str]:
+    """Declared entity_refs pointing at entities that do not exist (post-redirect)."""
+    return sorted({declared for declared in split_ids(meta.get("entity_refs")) if canonical_entity_id(declared) not in entity_by_id})
+
+
+def explicit_unresolved_refs(meta: dict[str, str]) -> list[str]:
+    """The record-level `unresolved_referent:` field promised by SKILL.md (原文挂
+    在事件上不建占位实体). It was documentation-only until 2.5.0; now projected."""
+    return split_ids(meta.get("unresolved_referent"))
+
+
 def build_entries(rows: list[dict[str, Any]], record_fragment: dict[str, str], entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     entity_by_id = {row["id"]: row for row in entities}; entries = []
     for row in rows:
@@ -405,7 +422,9 @@ def build_entries(rows: list[dict[str, Any]], record_fragment: dict[str, str], e
         if meta.get("kind") not in {"event", "decision", "state"}: continue
         record_id = meta.get("id", ""); d = date_info(meta); salience, basis = salience_for(meta, body)
         entity_refs = entity_refs_for(meta, body, entity_by_id)
-        entries.append({"id": f"entry.{slug(record_id)}", "record_id": record_id, "title": record_title(meta, body), "entry_kind": meta.get("kind", "unknown"), "status": meta.get("status", "current"), "confidence": meta.get("confidence", ""), "sensitivity": meta.get("sensitivity", ""), "tier": meta.get("tier") or "full", "summary": clean_text(body), "salience": salience, "salience_label": SALIENCE_LABELS[salience], "salience_basis": basis, **d, "phase": meta.get("phase") or "未分期", "domain": meta.get("domain") or "domain.unclassified", "entity_refs": sorted(set(entity_refs)), "unresolved_referents": [], "fragment_refs": record_fragment.get(record_id, []), "record_refs": [record_id], "before_ids": [], "after_ids": [], "relation_refs": {field: split_ids(meta.get(field)) for field in ("related_ids", "supports", "contradicts", "supersedes")}, "legacy_import": True, "note": "来自 v0.6 派生记录；重要性为导入启发式，未来可由原话复核。"})
+        dangling = unresolved_entity_refs(meta, entity_by_id)
+        unresolved = sorted(set(dangling) | set(explicit_unresolved_refs(meta)))
+        entries.append({"id": f"entry.{slug(record_id)}", "record_id": record_id, "title": record_title(meta, body), "entry_kind": meta.get("kind", "unknown"), "status": meta.get("status", "current"), "confidence": meta.get("confidence", ""), "sensitivity": meta.get("sensitivity", ""), "tier": meta.get("tier") or "full", "summary": clean_text(body), "salience": salience, "salience_label": SALIENCE_LABELS[salience], "salience_basis": basis, **d, "phase": meta.get("phase") or "未分期", "domain": meta.get("domain") or "domain.unclassified", "entity_refs": sorted(set(entity_refs)), "unresolved_referents": unresolved, "dangling_entity_refs": dangling, "fragment_refs": record_fragment.get(record_id, []), "record_refs": [record_id], "before_ids": [], "after_ids": [], "relation_refs": {field: split_ids(meta.get(field)) for field in ("related_ids", "supports", "contradicts", "supersedes")}, "legacy_import": True, "note": "来自 v0.6 派生记录；重要性为导入启发式，未来可由原话复核。"})
     dated = sorted((entry for entry in entries if entry.get("date_start")), key=lambda item: (item["date_start"], item["id"]))
     for index, entry in enumerate(dated):
         if index: entry["before_ids"].append(dated[index - 1]["id"])
@@ -696,6 +715,16 @@ def v2_audit(strict: bool = False) -> dict[str, Any]:
             if ref not in fragments: errors.append({"code": "entry-fragment-orphan", "entry": entry.get("id"), "fragment": ref})
         for ref in entry.get("entity_refs", []):
             if ref not in entities: errors.append({"code": "entry-entity-orphan", "entry": entry.get("id"), "entity": ref})
+        # Declared-but-missing entity links are now visible (2.5.0): they used to be
+        # silently dropped by entity_refs_for, so the orphan scan above (which only
+        # sees resolved refs) could never catch them and they rotted unseen. A typo'd
+        # or deleted entity target is a dangling link worth surfacing. NOTE: only
+        # true dangling (dangling_entity_refs) warns; an entry may additionally carry
+        # unresolved_referents from the record-level `unresolved_referent:` field,
+        # which is the SKILL-sanctioned way to keep an unnamed referent attached
+        # (e.g. a game whose title the user never gave) — not debt, no warning.
+        for ref in entry.get("dangling_entity_refs", []):
+            warnings.append({"code": "entity-ref-dangling", "record": entry.get("record_id"), "entity": ref})
     legacy_capture_debt = []
     for row in load_records():
         meta = row["meta"]
