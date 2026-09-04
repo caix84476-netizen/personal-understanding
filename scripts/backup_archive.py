@@ -12,7 +12,8 @@ Model (as defined by the user on 2026-08-29):
   (saves bandwidth).
 - Cloud (a WebDAV cloud drive via rclone): each run incrementally pushes
   "working archive + archived snapshot" (overwrite update), no resident daemon;
-  skipped when rclone_remote is not configured;
+  skipped when rclone_remote is not configured or when --no-cloud is passed
+  (sandbox/test runs must never push test data over the user's real cloud backup);
 - USB mirror is off by default (manual copying); with usb_mirror=true the
   backup also incrementally updates the working archive to a removable drive.
 
@@ -316,6 +317,7 @@ def main() -> int:
     ap.add_argument("--also-to", default="", help="temporarily override the full-archive mirror directory (takes priority over config)")
     ap.add_argument("--verify", action="store_true", help="verify the SHA256 of the existing stable snapshot (no packaging, no push)")
     ap.add_argument("--force-promote", action="store_true", help="skip the refresh-window decision and certify the current working archive as the new stable snapshot immediately")
+    ap.add_argument("--no-cloud", action="store_true", help="skip the rclone push even if rclone_remote is configured (§6.4): essential for sandbox/test copies whose config might carry a real remote")
     args = ap.parse_args()
 
     rotated = rotate_logs(BACKUPS)
@@ -362,7 +364,10 @@ def main() -> int:
             mirror_error = str(exc)
 
     rclone_remote = str(config.get("rclone_remote") or "").strip()
-    rclone_status = rclone_push(rclone_remote, config) if rclone_remote else "rclone_remote not configured"
+    if args.no_cloud:
+        rclone_status = "skipped: --no-cloud"
+    else:
+        rclone_status = rclone_push(rclone_remote, config) if rclone_remote else "rclone_remote not configured"
     stable = stable_zip_path()
     print(json.dumps({
         "status": "ok",
