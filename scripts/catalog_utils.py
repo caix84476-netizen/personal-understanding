@@ -394,12 +394,35 @@ def weighted_query_terms(query: str) -> list[str]:
     return list(dict.fromkeys(term for term in terms if term))
 
 
-def term_weights(terms: list[str], docs: list[str]) -> dict[str, float]:
+def single_char_aliases(rows: list[dict]) -> set[str]:
+    """Curated single-character entity aliases (妈/爸/哥…). These are referential,
+    not noise: the ×0.15 single-char demotion is meant for chars like 在/一/人 that
+    match 60%+ of records, but a family word the user actually types to mean a person
+    must keep its weight, or the entity→event feedback cannot carry it."""
+    out: set[str] = set()
+    for row in rows:
+        for alias in row.get("aliases") or []:
+            alias = str(alias).strip()
+            if len(alias) == 1 and not alias.isascii():
+                out.add(alias)
+    return out
+
+
+def content_terms(terms: list[str], alias_singles: set[str]) -> set[str]:
+    """Terms that carry real signal: Latin tokens, multi-char CJK, or a single char
+    that is a curated entity alias. A record whose only hits are outside this set
+    matched pure noise (a stray 防/钱/在) and must not consume a retrieval slot."""
+    return {t for t in terms if t.isascii() or len(t) >= 2 or t in alias_singles}
+
+
+def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = frozenset()) -> dict[str, float]:
     """IDF-style weights over a corpus of searchable texts.
 
     Rare terms weigh more; Latin tokens and multi-char CJK terms get a bonus, single
     CJK chars are demoted to near-noise. Corpus-wide document frequency is what
-    stops common chars from outranking distinctive proper nouns.
+    stops common chars from outranking distinctive proper nouns. A single char that
+    is a curated entity alias (see single_char_aliases) is referential, not noise, and
+    keeps the multi-char bonus so 妈/爸 queries can reach the family cluster.
     """
     total = max(len(docs), 1)
     weights: dict[str, float] = {}
@@ -410,7 +433,7 @@ def term_weights(terms: list[str], docs: list[str]) -> dict[str, float]:
         weight = math.log(1 + total / max(df, 1))
         if term.isascii():
             weight *= 1.6
-        elif len(term) >= 2:
+        elif len(term) >= 2 or term in alias_singles:
             weight *= 1.3
         else:
             weight *= 0.15
