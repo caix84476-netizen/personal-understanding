@@ -15,7 +15,7 @@ sys.path.insert(0, str(SCRIPTS))
 from turn_receipts import audit_turn, classify_personal_turn, create_receipt, mark_captured, mark_closed_for_capture
 
 
-class ThreeTierClassificationTests(unittest.TestCase):
+class TwoTierClassificationTests(unittest.TestCase):
     def test_auto_is_pure_content_classification(self):
         self.assertFalse(classify_personal_turn("《只狼》怎么打弦一郎？卡一下午了")["requires_personal_understanding"])
         self.assertTrue(classify_personal_turn("我今天感觉很难过")["requires_personal_understanding"])
@@ -23,11 +23,13 @@ class ThreeTierClassificationTests(unittest.TestCase):
         self.assertFalse(decision["requires_personal_understanding"])
         self.assertEqual(decision["signal"], "technical")
 
-    def test_light_declares_footprint_even_without_content_keywords(self):
+    def test_light_tier_is_normalized_to_full(self):
+        # 2.4.0 两档制：轻量档并入完整档。tier=light 枚举仅为兼容保留，
+        # 声明一律按 full 处理；活动足迹轮次改受 SKILL.md 足迹纪律约束，不再是独立档位。
         decision = classify_personal_turn("《只狼》怎么打弦一郎？", tier="light")
         self.assertTrue(decision["requires_personal_understanding"])
-        self.assertEqual(decision["signal"], "personal-light")
-        self.assertIn("model-declared-light-tier", decision["reasons"])
+        self.assertEqual(decision["tier"], "full")
+        self.assertEqual(decision["signal"], "personal")
         self.assertEqual(decision["reasons_suppressed"], [])
 
     def test_full_is_the_fallback_declaration(self):
@@ -56,24 +58,26 @@ class ThreeTierClassificationTests(unittest.TestCase):
             self.assertFalse(receipt["requires_personal_understanding"])
 
 
-class LightClosureGateTests(unittest.TestCase):
-    def _light_receipt_with_capture(self, root: Path, turn_id: str, capture_id: str) -> None:
+class FootprintClosureTests(unittest.TestCase):
+    def _footprint_receipt_with_capture(self, root: Path, turn_id: str, capture_id: str) -> None:
         create_receipt("宿舍四人间怎么摆好看", turn_id=turn_id, tier="light", root=root)
         mark_captured(turn_id, capture_id, root=root)
 
-    def test_light_turn_closed_without_derivation_fails_the_gate(self):
+    def test_footprint_turn_may_close_with_no_derivation(self):
+        # 两档制：足迹纪律允许查重零新增时以 no-derivation-needed 收场，
+        # 旧的 light-tier-requires-derived-record 门禁已随三档制一并移除。
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            self._light_receipt_with_capture(root, "turn.light.gate1", "cap.light.gate1")
+            self._footprint_receipt_with_capture(root, "turn.light.gate1", "cap.light.gate1")
             mark_closed_for_capture("cap.light.gate1", "no-derivation-needed", root=root)
             verdict = audit_turn("turn.light.gate1", root)
-            self.assertFalse(verdict["pass"])
-            self.assertEqual(verdict["code"], "light-tier-requires-derived-record")
+            self.assertTrue(verdict["pass"])
+            self.assertEqual(verdict["receipt"]["tier"], "full")
 
-    def test_light_turn_closed_with_derivation_passes(self):
+    def test_footprint_turn_closed_with_derivation_passes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            self._light_receipt_with_capture(root, "turn.light.gate2", "cap.light.gate2")
+            self._footprint_receipt_with_capture(root, "turn.light.gate2", "cap.light.gate2")
             mark_closed_for_capture("cap.light.gate2", "derived", root=root)
             self.assertTrue(audit_turn("turn.light.gate2", root)["pass"])
 

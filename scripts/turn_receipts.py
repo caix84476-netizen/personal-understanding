@@ -22,13 +22,13 @@ VALID_TIERS = ("auto", "full", "light", "skip")
 def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
     """Task form never wins over personal content: 润色 personal experience still captures.
 
-    tier 是模型对三档调用逻辑的显式声明，只在内容分类之外生效：
-    - light：轻量补记档——消息本身不含个人材料（如"某游戏怎么打"），但回答能沉淀一条
-      活动足迹（如"2026-09 正在玩某游戏"）。仍走 capture→一条微型记录→finalize，跳过 survey/probe。
-    - full：模型判定为完整档（内容分类漏判时的兜底）。
+    tier 是模型对两档调用逻辑的显式声明，只在内容分类之外生效：
+    - full：完整档——内容分类漏判时的兜底，也是活动足迹轮次的入口（派生受 SKILL.md
+      "足迹纪律"约束：恰好一条微型记录，查重零新增可 no-derivation 收场）。
     - skip：模型判定为跳过档，即使关键词误命中也不建 receipt 要求；被压制的内容分类
       检出会留痕在 reasons_suppressed，供事后审计（护栏：内容已检出个人材料的轮次不应声明 skip）。
     - auto：不声明，纯内容分类。
+    - light：已废弃（2.4.0 两档制并入 full），枚举仅为兼容旧调用保留，传入按 full 处理。
     """
     if tier not in VALID_TIERS: raise ValueError(f"tier 不合法：{tier}；必须是 {'/'.join(VALID_TIERS)}")
     if tier == "light":
