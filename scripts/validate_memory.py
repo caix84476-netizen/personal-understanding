@@ -8,6 +8,7 @@ from pathlib import Path
 from source_audit import audit_records
 from v2_archive import v2_audit
 from derivation_ledger import audit_ledger
+from catalog_utils import split_ids
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_SKILL_FIELDS = {"name", "description", "version"}
@@ -59,10 +60,14 @@ def main() -> int:
         if data.get("status") == "current" and data.get("kind") in ROUTING_KINDS and not data.get("domain"): errors.append(f"{path.name}: current routing record requires a domain")
         if data.get("kind") == "model" and data.get("status") == "current" and not data.get("supports"): warnings.append(f"{path.name}: current model has no explicit supports evidence")
         if not re.match(r"^[a-z0-9][a-z0-9._-]+$", record_id): errors.append(f"{path.name}: invalid id {record_id!r}")
-        if "current-conversation" in re.split(r"[;,]", data.get("source_refs", "")) and not data.get("verbatim_refs"):
+        # split_ids (not raw re.split): values are stored as "; a; b", so an
+        # unstripped compare silently missed every " current-conversation" and
+        # undercounted this debt vs the v2 metric (2.5.0 §6.9: 137 vs 171 was a
+        # bug, not "two metrics"). Both layers now share one definition.
+        if "current-conversation" in split_ids(data.get("source_refs")) and not split_ids(data.get("verbatim_refs")):
             legacy_verbatim_debt.append(data.get("id", path.name))
     if legacy_verbatim_debt:
-        warnings.append(f"legacy current-conversation without verbatim capture: {len(legacy_verbatim_debt)} record(s); the old summaries are kept as summary_only and the verbatim text cannot be conjured back.")
+        warnings.append(f"legacy current-conversation without verbatim capture: {len(legacy_verbatim_debt)} record(s)（与 v2 层的 legacy-missing-verbatim-capture 是同一指标）; the old summaries are kept as summary_only and the verbatim text cannot be conjured back.")
     for issue in audit_records(): warnings.append(f"{issue['id']}: unresolved source_refs {', '.join(issue['unresolved_refs'])}")
     known_ids = set(ids) | branch_ids; directional: dict[str, set[str]] = {record_id: set() for record_id in ids}
     for path in records:
