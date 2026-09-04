@@ -2,12 +2,12 @@
 
 ## v2 maintenance policy (formerly maintenance-policy)
 
-Maintenance has four outcomes:
+Maintenance has four outcomes, produced by TWO tools (2.5.0 clarification — `validate_memory.py` itself only reports the first three statuses):
 
 - clean: no problems;
 - warnings: structure usable but with migration debt, date gaps, pending follow-ups, or evidence gaps;
 - failed: structure / hash / relations / schema corrupted;
-- semantic-review-required: the model must compare verbatim, events, entities, and explanations item by item.
+- semantic-review-required: not a machine status value — it is the model's own reading of `review_v2.py --deep` output (thin-evidence hypotheses, summary-only debt, drift) telling it to compare verbatim, events, entities, and explanations item by item.
 
 `validate_memory.py` handles machine structure; `review_v2.py --deep` handles review bundles and semantic risk. Without a verbatim capture, review can only report that it cannot verify — it must never fill in the gap.
 

@@ -11,10 +11,16 @@ Whenever the user adds personal context, corrects the archive, recounts experien
 
 ## fidelity
 
-- `verbatim`: original user text or original attachment;
+Levels the archive actually emits today (2.5.0 — reconciled with `v2_archive.py`; the earlier draft listed five levels but only three are ever produced, and one of those three, `exact_attachment`, was undocumented):
+
+- `verbatim`: original user text, captured byte-for-byte and hashed;
+- `exact_attachment`: an attachment stored exactly as received (the prior draft folded this into "verbatim");
+- `summary_only`: legacy derived summary, cannot count as verbatim.
+
+Reserved for future capture kinds — NOT emitted by any current script, so no code path or filter may assume they exist:
+
 - `transcription`: audio/video transcription, the attachment must be retained;
 - `ocr`: text recognized from images, the image must be retained;
-- `summary_only`: legacy derived summary, cannot count as verbatim;
 - `external_material`: external/third-party material, used only as source evidence.
 
 Every summary must retain the `summary_only` marker or another derived marker. Approximate content agreement must never substitute for verbatim fidelity.

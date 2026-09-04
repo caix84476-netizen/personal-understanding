@@ -1,6 +1,10 @@
 # Retrieval Decision Trace
 
-Keep the following internal structure on every invocation of the personal skill:
+Two distinct things share the word "trace"; 2.5.0 separates them explicitly because conflating them made the contract unreadable:
+
+## 1. Model-internal reasoning convention (not persisted)
+
+Keep the following reasoning structure in mind on every invocation of the personal skill:
 
 ```json
 {
@@ -33,13 +37,14 @@ Keep the following internal structure on every invocation of the personal skill:
 }
 ```
 
-## Persistence (since v2.1.0)
+This full shape is only ever emitted as machine JSON by the DEPRECATED `retrieve_context.py` (2.0-compat; its tests lock this structure). The live v2 path does not persist it — it stays a thinking discipline for the model.
 
-The trace is no longer just a convention but a machine fact: on every run, `retrieve_v2.py` appends the trace of that retrieval (phase, queries, time windows, selected/stopped IDs, capture association) to `memory/v2/traces/trace-YYYYMM.jsonl`. Use `--capture-id` to associate the current turn's capture, or `--no-trace` to disable writing for a single run. Trace files are run logs; they do not participate in validation or derivation.
+## 2. Machine trace file (persisted by retrieve_v2.py, since v2.1.0)
 
-Use: when retrieval misses, mis-attributes, over-reads, or the user corrects something, replay the trace to locate the problem stage. `review_v2 --deep` and `review_skill` can, on demand, correlate high-frequency queries with frequently corrected memories. Traces are not shown to the user by default.
+On every run, `retrieve_v2.py` appends a narrower decision record to `memory/v2/traces/trace-YYYYMM.jsonl` with exactly these keys: `at, capture_id, activation("retrieve"), level, query, window, scoring, survey{events,entities,facets}, selected{event_ids,entity_ids,knowledge_ids,facet_ids}, stopped{event_count,entity_count,reason}, fidelity`. Pass `--capture-id` to associate the current turn's capture; `--no-trace` disables writing for one run. Trace files are run logs; they do not participate in validation or derivation.
 
+Use: when retrieval misses, mis-attributes, over-reads, or the user corrects something, replay the trace file to locate the problem stage (which terms were demanded, which IDs were selected, what was stopped by budget). Traces are not shown to the user by default. There is no automatic correlation between traces and feedback/corrections — inspecting the monthly trace log with the question in mind is a manual model step, not a tool behavior.
 
 ## v0.6 context extensions
 
-The decision trace must distinguish: seeds the user stated explicitly, relation-expansion candidates, cross-domain anchors, behavioral evidence, counterexamples/conflicts, historical changes, and stop candidates. `seed IDs` are not a relevance boundary; every candidate needs its relation path, level, keep/exclude/promote decision, and the reason.
+The decision trace must distinguish: seeds the user stated explicitly, relation-expansion candidates, cross-domain anchors, behavioral evidence, counterexamples/conflicts, historical changes, and stop candidates. `seed IDs` are not a relevance boundary; every candidate needs its relation path, level, keep/exclude/promote decision, and the reason. (Reasoning convention from section 1.)

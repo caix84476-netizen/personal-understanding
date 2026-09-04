@@ -26,8 +26,10 @@ Backward-compatibility note (formerly architecture-v0.2): the legacy `parent_ids
 - `timeline.jsonl`: timeline entries on a single unified salience axis;
 - `entities.jsonl`: entity catalog with references to stories / fragments / contexts;
 - `contexts.jsonl`: entity contexts and cross-entity facets;
-- `followups.jsonl`: follow-up questions and due dates;
+- `followups.jsonl`: follow-up questions and due dates; a closed loop is kept (status answered/declined/resolved + resolved_at/resolution_note), never deleted;
 - `hypotheses.jsonl`: candidate hypotheses;
+- `knowledge.jsonl`: knowledge cards projected from record kinds that are not timeline events (facts, preferences, rules, values, models);
+- `feedback.jsonl`: per-answer memory-use feedback (helpful/missed/corrected) recorded by record_feedback.py;
 - `relations.jsonl`: legacy archive relations and v2 context edges;
 - `current-state.json`: homepage snapshot of the core, situation, experience, tensions, and next checkpoint;
 - `index.json`: routing index by date, entity, record, salience, and fidelity;
