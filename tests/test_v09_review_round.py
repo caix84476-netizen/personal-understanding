@@ -294,7 +294,7 @@ class SurveyFastPathTests(unittest.TestCase):
     @unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/)")
     def test_survey_uses_light_header_and_keeps_contract(self):
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "catalog_context.py"), "--view", "survey"],
+            [sys.executable, str(SCRIPTS / "catalog_context.py"), "--maintenance", "--view", "survey"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -330,7 +330,7 @@ class SurveyFastPathTests(unittest.TestCase):
                 "verbatim_sha256": hashlib.sha256(verbatim.encode("utf-8")).hexdigest(),
             }, ensure_ascii=False) + "\n", encoding="utf-8")
             result = subprocess.run(
-                [sys.executable, str(repo / "scripts" / "retrieve_v2.py"), "--query", "high school football", "--level", "probe"],
+                [sys.executable, str(repo / "scripts" / "retrieve_v2.py"), "--maintenance", "--query", "high school football", "--level", "probe"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

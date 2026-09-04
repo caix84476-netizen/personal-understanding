@@ -65,7 +65,7 @@ class RecallRegressionTests(unittest.TestCase):
     """The five documented failure cases must now hit their targets."""
 
     def run_probe(self, query):
-        result = subprocess.run([sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--query", query, "--level", "probe", "--format", "json", "--no-trace"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        result = subprocess.run([sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--maintenance", "--query", query, "--level", "probe", "--format", "json", "--no-trace"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)
 

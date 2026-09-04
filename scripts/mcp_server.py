@@ -235,7 +235,7 @@ def handle(method: str, params: dict[str, Any]) -> Any:
     if method == "resources/read":
         uri = str(params.get("uri", ""))
         if uri == "personal://catalog/survey":
-            code, output = run_script("catalog_context.py", ["--view", "survey"]); return {"contents": [{"uri": uri, "mimeType": "application/json", "text": output}]} if not code else (_ for _ in ()).throw(RuntimeError(output))
+            code, output = run_script("catalog_context.py", ["--view", "survey", "--maintenance"]); return {"contents": [{"uri": uri, "mimeType": "application/json", "text": output}]} if not code else (_ for _ in ()).throw(RuntimeError(output))
         if uri == "personal://skill/info": return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": (ROOT / "SKILL.md").read_text(encoding="utf-8")}]} 
         raise ValueError(f"未知资源：{uri}")
     if method == "tools/call":
@@ -254,13 +254,13 @@ def handle(method: str, params: dict[str, Any]) -> Any:
             if not ok: return text_result(message, error=True)
             view = str(args.get("view", "survey"));
             if view not in {"survey", "routing", "full"}: return text_result("view 不合法。", error=True)
-            cmd = ["--view", view];
+            cmd = ["--view", view, "--capture-id", str(args.get("capture_id", "")).strip()];
             if args.get("query"): cmd += ["--query", str(args["query"])]
             code, output = run_script("catalog_context.py", cmd); return text_result(output, error=bool(code))
         if name == "personal_retrieve":
             ok, message = require_capture(args)
             if not ok: return text_result(message, error=True)
-            ids = args.get("ids") or []; query = str(args.get("query", "")); level = str(args.get("level", "probe")); cmd = ["--level", level]
+            ids = args.get("ids") or []; query = str(args.get("query", "")); level = str(args.get("level", "probe")); cmd = ["--level", level, "--capture-id", str(args.get("capture_id", "")).strip()]
             if ids: cmd += ["--event-ids", ",".join(str(item) for item in ids), "--entity-ids", ",".join(str(item) for item in ids)]
             if query: cmd += ["--query", query]
             code, output = run_script("retrieve_v2.py", cmd); return text_result(output, error=bool(code))

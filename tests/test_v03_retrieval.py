@@ -17,6 +17,10 @@ HAS_CATALOG = (ROOT / "memory" / "catalog.json").is_file()
 
 class RetrievalV2Tests(unittest.TestCase):
     def run_script(self, name, *args):
+        # Retrieval tests exercise probe/deep ranking directly; they are
+        # non-conversational maintenance reads, so they carry the --maintenance key.
+        if name in ("retrieve_v2.py", "catalog_context.py"):
+            args = ("--maintenance", *args)
         return subprocess.run([sys.executable, str(SCRIPTS / name), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     @unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/)")

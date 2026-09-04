@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Return a global survey, compatibility routing view, or complete audit catalog."""
 from __future__ import annotations
-from cli_runtime import configure_utf8_stdio
+from cli_runtime import CliReadGateError, configure_utf8_stdio, require_cli_capture
 configure_utf8_stdio()
 
 import argparse
 import json
 from collections import defaultdict
 
-from catalog_utils import build_catalog, build_catalog_header, route_catalog, write_catalog
+from catalog_utils import ROOT, build_catalog, build_catalog_header, route_catalog, write_catalog
 from followup_check import check_followups
 from v2_archive import load_v2, v2_audit
 
@@ -62,11 +62,27 @@ def main() -> int:
     parser.add_argument("--view", choices=("survey", "routing", "full"), default="survey")
     parser.add_argument("--query", default="", help="Optional current user message for candidate ordering only.")
     parser.add_argument("--per-domain", type=int, default=4)
-    parser.add_argument("--write", action="store_true", help="Explicitly rebuild memory/catalog.json and memory/catalog.md.")
+    parser.add_argument("--write", action="store_true", help="Explicitly rebuild memory/catalog.json and memory/catalog.md. Implies --maintenance.")
+    parser.add_argument("--capture-id", default="", help="link this turn's verbatim capture; required for interactive survey/routing reads unless --maintenance/--write is set")
+    parser.add_argument("--maintenance", action="store_true", help="declare a non-conversational read (rebuild/review/test) and skip the capture gate")
     args = parser.parse_args()
+    # --write is a maintenance rebuild by definition; treat it as self-declaring
+    # --maintenance so the internal rebuild path never trips its own gate.
+    maintenance = args.maintenance or args.write
+    try:
+        require_cli_capture(args.capture_id, maintenance=maintenance, root=ROOT)
+    except CliReadGateError as exc:
+        print(str(exc), file=__import__("sys").stderr); return 2
     # survey is the light path run on every activation: it does not build the
     # full legacy record/source catalog (no hashing, no source matching).
-    catalog = build_catalog_header() if args.view == "survey" else build_catalog()
+    # --write persists the full catalog, which the light header cannot supply
+    # (no `records` key) — so writing always builds the full catalog regardless
+    # of view (2.5.0 latent bug: `--view survey --write` crashed on KeyError
+    # since the 2.4.0 light-header split; only rebuild_views used the full path).
+    if args.write:
+        catalog = build_catalog()
+    else:
+        catalog = build_catalog_header() if args.view == "survey" else build_catalog()
     v2 = build_v2_survey(args.query)
     if args.write:
         write_catalog(catalog)

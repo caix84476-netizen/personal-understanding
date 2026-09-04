@@ -176,7 +176,7 @@ class ColdRecallWindowTests(unittest.TestCase):
     def test_window_returns_entries_without_keyword(self):
         month = self.first_timeline_month()
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--window", month, "--level", "probe", "--no-trace"],
+            [sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--maintenance", "--window", month, "--level", "probe", "--no-trace"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -189,7 +189,7 @@ class ColdRecallWindowTests(unittest.TestCase):
     def test_window_range_filters_boundaries(self):
         month = self.first_timeline_month()
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--window", f"{month}:{month}", "--level", "probe", "--no-trace"],
+            [sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--maintenance", "--window", f"{month}:{month}", "--level", "probe", "--no-trace"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

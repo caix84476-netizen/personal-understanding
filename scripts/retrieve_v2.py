@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Model-led retrieval for the v2 memory-shaped archive."""
 from __future__ import annotations
-from cli_runtime import configure_utf8_stdio
+from cli_runtime import CliReadGateError, configure_utf8_stdio, require_cli_capture
 configure_utf8_stdio()
 import argparse, json
 from datetime import date, datetime
@@ -75,10 +75,15 @@ def main() -> int:
     ap.add_argument("--max-entities", type=int, default=18)
     ap.add_argument("--max-fragments", type=int, default=40)
     ap.add_argument("--window", default="", help="time-window browsing, e.g. '2025-03' or '2025-03:2025-08'; combined with --query, filter by window first then rank by terms. For cold recall when keywords do not come to mind.")
-    ap.add_argument("--capture-id", default="", help="link this turn's verbatim capture into the retrieval trace; optional")
+    ap.add_argument("--capture-id", default="", help="link this turn's verbatim capture into the retrieval trace; required for interactive reads unless --maintenance is set")
+    ap.add_argument("--maintenance", action="store_true", help="declare a non-conversational read (rebuild/review/test) and skip the capture gate; audited, not silent")
     ap.add_argument("--no-trace", action="store_true", help="do not write a decision trace for this retrieval (default writes to memory/v2/traces/)")
     ap.add_argument("--format", choices=("json", "markdown"), default="json")
     args = ap.parse_args()
+    try:
+        require_cli_capture(args.capture_id, maintenance=args.maintenance, root=ROOT)
+    except CliReadGateError as exc:
+        print(str(exc), file=__import__("sys").stderr); return 2
     data = load_v2(); terms = weighted_query_terms(args.query)
     events = [row for row in data.get("events", []) if row.get("status") not in {"archived", "deleted"}]
     window = str(args.window or "").strip()

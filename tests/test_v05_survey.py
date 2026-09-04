@@ -14,6 +14,10 @@ HAS_CATALOG = (ROOT / "memory" / "catalog.json").is_file()
 
 class SurveyV05Tests(unittest.TestCase):
     def run_script(self, name, *args):
+        # Survey/catalog reads in tests are non-conversational maintenance reads;
+        # the capture gate would otherwise reject them (§6.5 maintenance key).
+        if name in ("retrieve_v2.py", "catalog_context.py"):
+            args = ("--maintenance", *args)
         return subprocess.run(
             [sys.executable, str(SCRIPTS / name), *args],
             capture_output=True,
