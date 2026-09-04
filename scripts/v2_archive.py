@@ -132,6 +132,15 @@ def clean_text(value: str) -> str:
     return " ".join(value.split())
 
 
+def normalized_phase(value: str | None) -> str:
+    """Timeline entries without a phase bucket 未分期. The literal string "None"
+    reached some frontmatter via legacy imports and is truthy, so `or` fallbacks
+    miss it; normalize it (and empties) to the canonical label once, at the
+    projection boundary, so every consumer sees the same thing."""
+    text = str(value or "").strip()
+    return "未分期" if not text or text.lower() == "none" else text
+
+
 def parse_date_value(value: str | None) -> tuple[str | None, str]:
     raw = str(value or "").strip()
     if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", raw):
@@ -424,7 +433,7 @@ def build_entries(rows: list[dict[str, Any]], record_fragment: dict[str, str], e
         entity_refs = entity_refs_for(meta, body, entity_by_id)
         dangling = unresolved_entity_refs(meta, entity_by_id)
         unresolved = sorted(set(dangling) | set(explicit_unresolved_refs(meta)))
-        entries.append({"id": f"entry.{slug(record_id)}", "record_id": record_id, "title": record_title(meta, body), "entry_kind": meta.get("kind", "unknown"), "status": meta.get("status", "current"), "confidence": meta.get("confidence", ""), "sensitivity": meta.get("sensitivity", ""), "tier": meta.get("tier") or "full", "summary": clean_text(body), "salience": salience, "salience_label": SALIENCE_LABELS[salience], "salience_basis": basis, **d, "phase": meta.get("phase") or "未分期", "domain": meta.get("domain") or "domain.unclassified", "entity_refs": sorted(set(entity_refs)), "unresolved_referents": unresolved, "dangling_entity_refs": dangling, "fragment_refs": record_fragment.get(record_id, []), "record_refs": [record_id], "before_ids": [], "after_ids": [], "relation_refs": {field: split_ids(meta.get(field)) for field in ("related_ids", "supports", "contradicts", "supersedes")}, "legacy_import": True, "note": "来自 v0.6 派生记录；重要性为导入启发式，未来可由原话复核。"})
+        entries.append({"id": f"entry.{slug(record_id)}", "record_id": record_id, "title": record_title(meta, body), "entry_kind": meta.get("kind", "unknown"), "status": meta.get("status", "current"), "confidence": meta.get("confidence", ""), "sensitivity": meta.get("sensitivity", ""), "tier": meta.get("tier") or "full", "summary": clean_text(body), "salience": salience, "salience_label": SALIENCE_LABELS[salience], "salience_basis": basis, **d, "phase": normalized_phase(meta.get("phase")), "domain": meta.get("domain") or "domain.unclassified", "entity_refs": sorted(set(entity_refs)), "unresolved_referents": unresolved, "dangling_entity_refs": dangling, "fragment_refs": record_fragment.get(record_id, []), "record_refs": [record_id], "before_ids": [], "after_ids": [], "relation_refs": {field: split_ids(meta.get(field)) for field in ("related_ids", "supports", "contradicts", "supersedes")}, "legacy_import": True, "note": "来自 v0.6 派生记录；重要性为导入启发式，未来可由原话复核。"})
     dated = sorted((entry for entry in entries if entry.get("date_start")), key=lambda item: (item["date_start"], item["id"]))
     for index, entry in enumerate(dated):
         if index: entry["before_ids"].append(dated[index - 1]["id"])

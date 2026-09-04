@@ -256,10 +256,11 @@ def handle(method: str, params: dict[str, Any]) -> Any:
             # receipt) so skip-tier turns pay no extra tokens.
             payload: dict[str, Any] = {"turn_receipt": receipt}
             if receipt.get("requires_personal_understanding"):
-                from preflight_context import state_snapshot
+                from preflight_context import maintenance_reminders, state_snapshot
                 checks = check_followups()
                 payload["followups"] = {"due": checks["due"], "undated_pending": checks["undated_pending"]}
                 payload["current_state_snapshot"] = state_snapshot()
+                payload["maintenance_reminders"] = maintenance_reminders()
             return text_result(json.dumps(payload, ensure_ascii=False, indent=2))
         if name == "personal_catalog":
             ok, message = require_capture(args)

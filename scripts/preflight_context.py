@@ -9,6 +9,7 @@ from pathlib import Path
 from followup_check import check_followups
 from turn_receipts import classify_personal_turn, create_receipt
 from v2_archive import load_v2
+from session_check import maintenance_reminders
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,6 +95,10 @@ def main() -> int:
         # (SKILL.md 低信号降级读取); the snapshot was the missing half. Attached
         # only when the turn is personal-required, so skip-tier preflights stay lean.
         "current_state_snapshot": state_snapshot() if required else {"available": False, "reason": "turn not personal-required"},
+        # maintenance-and-durability says preflight/session_check carry the ONE
+        # maintenance view the model must watch; session_check had it, preflight
+        # didn't (recon finding). Same reminders, no divergence in wording.
+        "maintenance_reminders": maintenance_reminders(),
         "review_alert": review_alert,
         "auto_review": auto_review,
         "policy": "receipt 是可校验事实：requires_personal_understanding=true 时，capture、finalize、session_check 缺一项即不得结束或声称已更新。",

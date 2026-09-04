@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 HAS_ARCHIVE = (ROOT / "memory" / "v2").is_dir()
 HAS_CATALOG = (ROOT / "memory" / "catalog.json").is_file()
@@ -66,6 +67,24 @@ class SurveyV05Tests(unittest.TestCase):
         data = json.loads(result.stdout)
         ids = {item["id"] for domain in data["domains"] for item in domain["records"]}
         self.assertTrue(ids, "routing view must expose the current record map")
+
+    @unittest.skipUnless(HAS_CATALOG, "requires an initialized archive (memory/)")
+    def test_spine_buckets_by_phase_without_recency_domination(self):
+        # architecture-v2 promise: early-period key events are not pushed out of
+        # the map by newer entries — per-phase representatives, not a time sort.
+        result = self.run_script("catalog_context.py", "--view", "survey")
+        data = json.loads(result.stdout)
+        spine = data["v2"]["spine"]
+        years = {(row.get("date_text") or "")[:4] for row in spine if (row.get("date_text") or "").strip()}
+        self.assertGreaterEqual(len(years), 2, f"spine must span multiple years, got {sorted(years)}")
+        self.assertNotIn("None", {row.get("phase") for row in spine}, "literal 'None' phase must be normalized to 未分期")
+
+    def test_normalized_phase_treats_none_string_as_unphased(self):
+        from v2_archive import normalized_phase
+        self.assertEqual(normalized_phase("None"), "未分期")
+        self.assertEqual(normalized_phase(None), "未分期")
+        self.assertEqual(normalized_phase("  "), "未分期")
+        self.assertEqual(normalized_phase("高中"), "高中")
 
     @unittest.skipUnless(HAS_CATALOG, "requires an initialized archive (memory/)")
     def test_chinese_query_returns_current_records(self):

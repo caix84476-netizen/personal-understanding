@@ -32,7 +32,10 @@ def build_v2_survey(query: str = "") -> dict:
     # the highest-salience items, top up to the minimum, then sort by time.
     by_phase: dict[str, list] = defaultdict(list)
     for row in anchors:
-        by_phase[str(row.get("phase") or "未分期")].append(row)
+        # projection already normalizes the literal "None" phase (normalized_phase
+        # in v2_archive); the fallback here only guards legacy caches built before 2.5.0.
+        phase_value = str(row.get("phase") or "未分期")
+        by_phase["未分期" if phase_value == "None" else phase_value].append(row)
     per_phase = max(10, min(20, 60 // max(1, len(by_phase))))
     weight_key = lambda row: (-int(row.get("salience", 0) or 0), str(row.get("date_start") or "9999-99-99"), str(row.get("id", "")))
     selected: list = []
