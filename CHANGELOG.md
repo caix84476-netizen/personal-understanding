@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.0 — 2026-09-05 — audit-repair release: retrieval honesty, write integrity, ops hardening
+
+承接 2.4.1 质量审计交接文档的全量修复轮：交接文档列出的问题全部修复，另经交叉审计新挖并修复约 10 项（下文标"新发现"）。
+
+- 检索召回（§4.1/§4.2/§5.2 + 新发现）：单字实体别名（妈/她）豁免 ×0.15 噪音降权，实体→事件反哺在口语查询上真正接通（T06"妈 转钱"核心事件 16→7）；新增 `content_terms` 名额门槛——只被非别名单字偶然命中的记录不再占检索名额（T02"只狼"的 5 条误拉清零，无匹配玩法记录时 timeline 诚实为空）；`STOP_TERMS` 堵闭类疑问词（怎么/什么）被 IDF 误当稀有专有词（新发现）；trace 标签 `weighted-idf-3-stopcontent`；deep 读取时被显式核验记录的自有片段优先于邻居 verbatim（§5.2）。实体状态大迁移（§5.1）：实体正文只留稳定身份，可变状态归 state/decision 记录，sekiro 僵尸断言清除。
+- 写入一致性（§5/§6.1/§6.2/§6.9/§6.10）：MCP 写工具不再在 capture pending 的正常中间态误报 isError（消除"写成功也报错→重试→重复建档"）；`repair_ledger` 信任规则重写——附件 ledger-only 链接保留、文本 capture 以 frontmatter 为准清陈旧声明（真实档案 8 条漂移清零）、no-derivation 处置不被 source_path 共现翻转，三向测试；`update_state` 版本链开放 decision（兑现"旧决定只做版本链"）；validate 与 v2 层的 verbatim 债务指标统一 `split_ids`（§6.9 真相是漏计 34 条的 bug，非"两个指标"）。
+- 回访与预检（§6.3/§8/§8.1 + 新发现）：回访正规关闭通道 `resolve_followup`（answered/declined/resolved + 具体 note，MCP `personal_resolve_followup` + CLI `--resolve`），过时回访不再赖着；tier 同 turn-id 重声明即时升级生效、降级拒绝（§8.1 假 receipt 修复）；分类器强情感词独立触发（省略主语的抒发轮次）+ 技术语境否决（§8）；preflight 补上文档承诺却从未存在的当前状态快照，CLI/MCP 双路径兑现低信号快通道（新发现）。
+- 耐久运维（§6.4/§6.5/§6.6 + 新发现）：`backup_archive --no-cloud`（沙盒残留真实 remote 不再覆盖真备份）；CLI 读取 capture 闸门与 MCP 对齐（`--capture-id` 校验存在性或显式 `--maintenance`，内部工具经共享 helper 自动带钥匙）；`install_mcp` 防劫持护栏——旧注册树仍在磁盘即判定为副本劫持并拒绝改注册（`--force` 覆盖），§1.2 事故制度化修复。
+- 审计可见性与兼容层（§6.7/§6.8 + 新发现）：对话开场模板中文化；legacy `query_context`/`retrieve_context` 标 DEPRECATED 并写入 SKILL 维护清单（`review_context` 澄清为活依赖）；悬空实体引用显形（`entity_refs_for` 曾静默丢弃→orphan 审计永不触发，现投影 `unresolved_referents` 发 `entity-ref-dangling`，真实档案 7 处清零，SKILL 承诺的 `unresolved_referent` 死字段接通）；`review_v2 --deep` 新增薄证据假设、无 capture 锚点反馈两条审计警告（提示不拦停，守行为约束）。
+- 文档与测试：references 与实现对齐（fidelity 三级现实/第四态归属/文件清单/trace schema 拆分并删自动关联承诺）；`restore_stable` 补 4 项测试（此前零锁死）；测试 113→150，各修复带回归锁；版本同步测试扩面到 README×2 + CHANGELOG 顶部，堵"只 pin 前四处"漂移盲区（新发现）。
+
 ## 2.4.1 — 2026-09-04 — retrieval recall fix: weighted ranking for probe and routing
 
 - 检索召回质量修复（2026-09-03 实测三类故障：漏召回、捞偏、弱相关噪音）。根因定位：probe 的 `score()` 是等权词计数，`query_terms` 生成的单字（在/一/人/看…）能命中 60%–70% 的记录，长记录靠单字堆分霸榜；实体选择存在名额 bug——被选中事件挂的实体先塞满 `max_entities` 名额，把词面匹配最强的实体（如 entity.game.sekiro）完全挤出。

@@ -1,8 +1,10 @@
-"""Repo self-check: SKILL.md / SKILL.zh-CN.md / VERSION / pyproject must agree.
+"""Repo self-check: SKILL.md / SKILL.zh-CN.md / VERSION / pyproject / README×2 /
+CHANGELOG head must all agree.
 
 The 2.2.0 release bumped SKILL.md + VERSION but not validate_memory.py's
-hardcoded expectation, so installs failed validation out of the box. This test
-pins all four version declarations together so a partial bump fails CI.
+hardcoded expectation, so installs failed validation out of the box. The 2.4.1
+audit noted the old four-way pin let README and the CHANGELOG drift unseen, so
+the 2.5.0 release pins them too: a partial version bump now fails CI everywhere.
 """
 import re
 import unittest
@@ -26,6 +28,15 @@ class RepoVersionSyncTests(unittest.TestCase):
         self.assertEqual(frontmatter_version(REPO / "SKILL.md"), version_file)
         self.assertEqual(frontmatter_version(REPO / "SKILL.zh-CN.md"), version_file)
         self.assertEqual(m.group(1), version_file)
+        en = re.search(r"\*\*Current release: v([0-9.]+)\*\*", (REPO / "README.md").read_text(encoding="utf-8"))
+        zh = re.search(r"\*\*当前版本：v([0-9.]+)\*\*", (REPO / "README.zh-CN.md").read_text(encoding="utf-8"))
+        self.assertIsNotNone(en, "README.md current-release line missing")
+        self.assertIsNotNone(zh, "README.zh-CN.md current-release line missing")
+        self.assertEqual(en.group(1), version_file)
+        self.assertEqual(zh.group(1), version_file)
+        head = re.search(r"^## (\d+\.\d+\.\d+)", (REPO / "CHANGELOG.md").read_text(encoding="utf-8"), re.M)
+        self.assertIsNotNone(head, "CHANGELOG has no version heading")
+        self.assertEqual(head.group(1), version_file)
 
 
 if __name__ == "__main__":
