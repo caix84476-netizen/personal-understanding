@@ -23,6 +23,19 @@ class TwoTierClassificationTests(unittest.TestCase):
         self.assertFalse(decision["requires_personal_understanding"])
         self.assertEqual(decision["signal"], "technical")
 
+    def test_strong_affect_words_fire_without_subject(self):
+        # §8: Chinese drops the subject; 抒发/状态 turns must recall without 我.
+        for msg in ("有点烦，不知道干嘛", "挺焦虑的", "下巴冒痘了挺烦", "今天心情很差", "被说了一顿有点委屈"):
+            decision = classify_personal_turn(msg)
+            self.assertTrue(decision["requires_personal_understanding"], msg)
+            self.assertIn("affective-or-state-without-subject", decision["reasons"], msg)
+
+    def test_technical_context_vetoes_strong_word(self):
+        # A strong affect word inside a technical turn must stay technical —
+        # the churn the user would feel if every bug-complaint opened a capture.
+        self.assertFalse(classify_personal_turn("这个 bug 的报错太烦了")["requires_personal_understanding"])
+        self.assertFalse(classify_personal_turn("这配置烦死了改不动")["requires_personal_understanding"])
+
     def test_light_tier_is_normalized_to_full(self):
         # 2.4.0 两档制：轻量档并入完整档。tier=light 枚举仅为兼容保留，
         # 声明一律按 full 处理；活动足迹轮次改受 SKILL.md 足迹纪律约束，不再是独立档位。
