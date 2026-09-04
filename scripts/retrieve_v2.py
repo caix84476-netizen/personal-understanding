@@ -6,7 +6,7 @@ configure_utf8_stdio()
 import argparse, json
 from datetime import date, datetime
 from collections import defaultdict
-from catalog_utils import ROOT, query_terms
+from catalog_utils import ROOT, term_weights, weighted_match_score, weighted_query_terms
 from v2_archive import V2_ROOT, followup_is_due, load_v2
 
 
@@ -16,9 +16,17 @@ def haystack(row: dict) -> str:
     return " ".join(values).casefold()
 
 
-def score(row: dict, terms: list[str]) -> int:
-    text = haystack(row)
-    return sum(1 for term in terms if term and term.casefold() in text)
+def title_haystack(row: dict) -> str:
+    """Compact identity text (ids/title/label/aliases); matches there get a small
+    bonus so records whose *title* names the concept beat long records that only
+    mention it once in the body."""
+    values = [str(row.get(key, "")) for key in ("id", "record_id", "title", "label")]
+    values += [" ".join(row.get("aliases", []) or [])]
+    return " ".join(values).casefold()
+
+
+def row_score(row: dict, weights: dict[str, float]) -> float:
+    return weighted_match_score(haystack(row), weights) + 0.5 * weighted_match_score(title_haystack(row), weights)
 
 
 def compact_event(row: dict) -> dict:
@@ -71,7 +79,7 @@ def main() -> int:
     ap.add_argument("--no-trace", action="store_true", help="do not write a decision trace for this retrieval (default writes to memory/v2/traces/)")
     ap.add_argument("--format", choices=("json", "markdown"), default="json")
     args = ap.parse_args()
-    data = load_v2(); terms = query_terms(args.query)
+    data = load_v2(); terms = weighted_query_terms(args.query)
     events = [row for row in data.get("events", []) if row.get("status") not in {"archived", "deleted"}]
     window = str(args.window or "").strip()
     if window:
@@ -88,7 +96,17 @@ def main() -> int:
     entities = data.get("entities", []); facets = data.get("contexts", []); knowledge = data.get("knowledge", []); fragments = {row.get("id"): row for row in data.get("fragments", [])}
     explicit_events = {x.strip() for x in args.event_ids.replace(";", ",").split(",") if x.strip()}
     explicit_entities = {x.strip() for x in args.entity_ids.replace(";", ",").split(",") if x.strip()}
-    ranked_events = sorted(((score(row, terms), row) for row in events), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("date_start") or "9999-99-99", pair[1].get("id", "")))
+    # Weighted ranking: IDF over the whole corpus so rare decisive terms (只狼/弦一郎)
+    # outrank common chars, and length normalization so very long records stop dominating.
+    corpus = [haystack(row) for row in events] + [haystack(row) for row in entities] + [haystack(row) for row in knowledge]
+    weights = term_weights(terms, corpus)
+    entity_scores = {row.get("id"): row_score(row, weights) for row in entities}
+    ENTITY_EVENT_BOOST = 0.6
+    def event_value(row: dict) -> float:
+        value = row_score(row, weights)
+        boost = max((entity_scores.get(ref, 0.0) for ref in row.get("entity_refs", [])), default=0.0)
+        return value + ENTITY_EVENT_BOOST * boost
+    ranked_events = sorted(((event_value(row), row) for row in events), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("date_start") or "9999-99-99", pair[1].get("id", "")))
     selected_events = [row for _, row in ranked_events if row.get("id") in explicit_events or row.get("record_id") in explicit_events]
     selected_events += [row for value, row in ranked_events if row not in selected_events and (value > 0 or not terms or window)][: max(0, args.max_events - len(selected_events))]
     if not selected_events and explicit_events:
@@ -96,11 +114,16 @@ def main() -> int:
     event_ids = {row.get("id") for row in selected_events}
     entity_ids = set(explicit_entities)
     for row in selected_events: entity_ids.update(row.get("entity_refs", []))
-    ranked_entities = sorted(((score(row, terms) + (8 if row.get("id") in entity_ids else 0), row) for row in entities), key=lambda pair: (-pair[0], pair[1].get("id", "")))
-    selected_entities = [row for _, row in ranked_entities if row.get("id") in entity_ids]
-    selected_entities += [row for value, row in ranked_entities if row not in selected_entities and (value > 0 or not terms)][: max(0, args.max_entities - len(selected_entities))]
+    # Term-matched entities first; event-linked entities only fill the remaining budget.
+    # (The old order did the opposite, so event-linked entities could exhaust the
+    # budget and crowd out the entity the query actually named, e.g. 只狼.)
+    ranked_entities = sorted(((row_score(row, weights), row) for row in entities), key=lambda pair: (-pair[0], pair[1].get("id", "")))
+    selected_entities = [row for row in entities if row.get("id") in explicit_entities]
+    selected_entities += [row for value, row in ranked_entities if value > 0 and row not in selected_entities][: max(0, args.max_entities - len(selected_entities))]
+    if len(selected_entities) < args.max_entities:
+        selected_entities += [row for row in entities if row.get("id") in entity_ids and row not in selected_entities][: max(0, args.max_entities - len(selected_entities))]
     entity_ids = {row.get("id") for row in selected_entities}
-    ranked_knowledge = sorted(((score(row, terms) + (7 if row.get("record_id") in explicit_events else 0), row) for row in knowledge), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("id", "")))
+    ranked_knowledge = sorted(((row_score(row, weights) + (7 if row.get("record_id") in explicit_events else 0), row) for row in knowledge), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("id", "")))
     selected_knowledge = [row for value, row in ranked_knowledge if row.get("record_id") in explicit_events]
     selected_knowledge += [row for value, row in ranked_knowledge if row not in selected_knowledge and (value > 0 or not terms)][:18]
     for row in selected_knowledge:
@@ -125,7 +148,7 @@ def main() -> int:
     timeline_rows = [compact_event(row) for row in selected_events]
     for item, row in zip(timeline_rows, selected_events):
         item["evidence_fidelity"] = evidence_fidelity(row, fidelity_by_fragment)
-    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
+    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-1", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
     trace_path = None
     if not args.no_trace:
         trace_path = save_trace(trace, capture_id=args.capture_id)

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.1 — 2026-09-04 — retrieval recall fix: weighted ranking for probe and routing
+
+- 检索召回质量修复（2026-09-03 实测三类故障：漏召回、捞偏、弱相关噪音）。根因定位：probe 的 `score()` 是等权词计数，`query_terms` 生成的单字（在/一/人/看…）能命中 60%–70% 的记录，长记录靠单字堆分霸榜；实体选择存在名额 bug——被选中事件挂的实体先塞满 `max_entities` 名额，把词面匹配最强的实体（如 entity.game.sekiro）完全挤出。
+- `scripts/catalog_utils.py`：新增共享加权打分三件套——`weighted_query_terms`（CJK 连续串不再拆单字，仅独立单字保留）、`term_weights`（IDF：稀有词高权、单字近零、拉丁专有名词加码）、`weighted_match_score`（命中权重和除以 1+log(文本长度)，长度归一）。`route_catalog` 域内排序接入同一打分（全量列出结构不变）。
+- `scripts/retrieve_v2.py`：probe 全面换用加权打分；实体选择改为"词面匹配实体优先、事件链实体填充剩余名额"（修复名额 bug）；新增实体→事件反哺加权（查询命中实体时，挂靠该实体的时间条目获得 boost，如"哥哥 家里"→哥哥冲突事件）。trace 记录 `scoring: weighted-idf-1` 便于回放。
+- 敏感性：按用户决策不做任何拦截或降权——档案写出来就是给模型看的，怕泄露而少接触数据是本末倒置；加权打分本身已消除"无关查询靠单字误拉敏感记录"（实测隐私查询下敏感健康记录从第 3 名自然掉到第 9 名）。
+- 验收：沙盒 9 案例（5 失败 + 4 正面对照）回归 hard_fail=0——只狼实体第 1、巫师3 卡第 1、家里噪音第 2（哥哥冲突第 8，软期望）、隐私规范化第 3、CS2 第 1；四个正面对照全部保持第 1–3。
+- 文档：SKILL.md/SKILL.zh-CN.md probe 节补充加权排序说明，撤下"probe 漏召回、查重以 routing 为主"的临时指引（2.4.0 遗留）。
+- 版本同步修复（存量漂移）：pyproject.toml 停在 2.3.1 与 VERSION 2.4.0 不一致（test_repo_version_sync 自 2.4.0 起即红），本次统一升至 2.4.1。
+
 ## 2.4.0 — 2026-09-03 — two-tier reform: light tier merged into full
 
 - 两档制改革（当日实测驱动）：轻量补记档（light）废除，活动足迹轮次并入完整档，受"足迹纪律"约束——写入前定向查重（防盲写，当日"已入学"误记的制度根源）、恰好一条 tier=light/salience 0–1 微型记录、查重零新增以 no-derivation-needed 体面收场（reason 须写明命中记录）、矛盾留证不断言。废除理由：免读取省下的少量 token 低于其引入的复杂度与事故率（盲写误记、查重死锁、回答无法利用档案背景）。

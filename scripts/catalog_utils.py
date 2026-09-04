@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import date
 from pathlib import Path
@@ -373,6 +374,64 @@ def query_terms(query: str) -> list[str]:
     return list(dict.fromkeys(term for term in terms if term))
 
 
+def weighted_query_terms(query: str) -> list[str]:
+    """Tokenize for weighted ranking: same n-gram coverage as query_terms but without
+    single-character noise from CJK runs longer than one char.
+
+    Single chars match 60%+ of all records (在/一/人/看…), which lets long records
+    pile up cheap hits and bury rare decisive terms (只狼/弦一郎/猫学派). A single-char
+    term is only kept when the query itself is that one char.
+    """
+    compact = query.casefold()
+    terms: list[str] = []
+    terms.extend(re.findall(r"[a-z0-9_]+", compact))
+    for run in re.findall(r"[\u4e00-\u9fff]+", compact):
+        if len(run) <= 4:
+            terms.append(run)
+        terms.extend(run[index : index + size] for size in (2, 3, 4) for index in range(len(run) - size + 1))
+        if len(run) == 1:
+            terms.append(run)
+    return list(dict.fromkeys(term for term in terms if term))
+
+
+def term_weights(terms: list[str], docs: list[str]) -> dict[str, float]:
+    """IDF-style weights over a corpus of searchable texts.
+
+    Rare terms weigh more; Latin tokens and multi-char CJK terms get a bonus, single
+    CJK chars are demoted to near-noise. Corpus-wide document frequency is what
+    stops common chars from outranking distinctive proper nouns.
+    """
+    total = max(len(docs), 1)
+    weights: dict[str, float] = {}
+    for term in terms:
+        if not term:
+            continue
+        df = sum(1 for doc in docs if term in doc)
+        weight = math.log(1 + total / max(df, 1))
+        if term.isascii():
+            weight *= 1.6
+        elif len(term) >= 2:
+            weight *= 1.3
+        else:
+            weight *= 0.15
+        weights[term] = weight
+    return weights
+
+
+def weighted_match_score(haystack: str, weights: dict[str, float]) -> float:
+    """Length-normalized weighted term match.
+
+    Sum of weights for terms present in the haystack, divided by 1+log(len) so very
+    long records cannot win on bulk alone. A 5000-char record needs far more matched
+    terms than a 200-char one to reach the same score.
+    """
+    text = haystack.casefold()
+    if not weights or not text:
+        return 0.0
+    total = sum(weight for term, weight in weights.items() if term in text)
+    return total / (1 + math.log(1 + len(text)))
+
+
 def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4) -> dict[str, Any]:
     """Return the global survey plus compatibility domain groupings.
 
@@ -380,17 +439,24 @@ def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4)
     hard cap: the model must see the complete current map before selecting a
     smaller probe set.
     """
-    terms = query_terms(query)
+    terms = weighted_query_terms(query)
 
-    def score(item: dict[str, Any]) -> tuple[int, int, str]:
-        searchable = " ".join(
+    def searchable(item: dict[str, Any]) -> str:
+        return " ".join(
             [item.get("id", ""), item.get("summary", ""), item.get("applies_when", "")]
             + item.get("aliases", [])
         ).casefold()
-        direct = sum(1 for term in terms if term in searchable)
+
+    # Same weighted ranking as probe: IDF over current records so rare terms
+    # (只狼/猫学派) outrank common chars, and long summaries stop dominating.
+    corpus = [searchable(item) for item in catalog["records"]]
+    weights = term_weights(terms, corpus)
+
+    def score(item: dict[str, Any]) -> tuple[float, float, int, str]:
+        direct = weighted_match_score(searchable(item), weights)
         current = 1 if item.get("status") == "current" else 0
         kind = 1 if item.get("kind") in ROUTING_KINDS else 0
-        return (direct * 100 + current * 10 + kind, current, item.get("id", ""))
+        return (direct * 100 + current * 10 + kind, direct, current, item.get("id", ""))
 
     selected = [item for item in catalog["records"] if item.get("status") == "current"]
     by_domain: dict[str, list[dict[str, Any]]] = {}
