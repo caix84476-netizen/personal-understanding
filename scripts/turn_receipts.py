@@ -68,7 +68,20 @@ def create_receipt(text: str, *, turn_id: str | None = None, conversation_id: st
         old = read_receipt(turn_id, root)
         if old:
             if old.get("message_sha256") != digest: raise ValueError("同一 turn_id 不能对应不同用户消息")
-            return old
+            # §8.1: a re-declared tier must not be silently dropped. Upgrading a
+            # turn the content classifier missed (auto→non-personal, then the model
+            # declares full) must take effect on the SAME turn id — a model that
+            # instead invents a fresh turn id leaks duplicate receipts. Downgrades
+            # stay refused: suppressing already-detected personal material with
+            # skip is the guardrail the receipt trail exists to catch.
+            decision = classify_personal_turn(text, tier=tier)
+            if bool(decision["requires_personal_understanding"]) == bool(old.get("requires_personal_understanding")):
+                return old
+            if not decision["requires_personal_understanding"]:
+                raise ValueError("同一 turn 已有需要捕获的 receipt，拒绝降级为 skip/非个人；压制行为应发生在 preflight 之前")
+            receipt = {**old, **decision, "capture_status": "required", "closure_status": "required",
+                       "tier_upgraded_at": now_iso(), "tier_upgraded_from": old.get("tier")}
+            _write(receipt, root); return receipt
         decision = classify_personal_turn(text, tier=tier)
         receipt = {"schema_version": "1.1.1", "turn_id": turn_id, "created_at": now_iso(), "conversation_id": conversation_id or None, "message_sha256": digest, **decision, "capture_id": None, "capture_ids": [], "capture_status": "required" if decision["requires_personal_understanding"] else "not-required", "closure_status": "required" if decision["requires_personal_understanding"] else "not-required"}
         _write(receipt, root); return receipt

@@ -37,6 +37,41 @@ class TwoTierClassificationTests(unittest.TestCase):
         self.assertTrue(decision["requires_personal_understanding"])
         self.assertEqual(decision["signal"], "personal")
 
+    def test_tier_upgrade_takes_effect_on_same_turn_id(self):
+        # §8.1: re-declaring full after an auto miss must NOT be silently dropped.
+        # A model that instead invents a new turn id leaks duplicate receipts, so
+        # the upgrade rewrites the decision under the same turn_id.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            msg = "兵役登记搞完表打印交武装部"
+            first = create_receipt(msg, turn_id="turn.upgrade", tier="auto", root=root)
+            self.assertFalse(first["requires_personal_understanding"])
+            second = create_receipt(msg, turn_id="turn.upgrade", tier="full", root=root)
+            self.assertTrue(second["requires_personal_understanding"])
+            self.assertEqual(second["turn_id"], "turn.upgrade")  # reused, not a new receipt
+            self.assertEqual(second.get("tier_upgraded_from"), "auto")
+            self.assertEqual(second["capture_status"], "required")
+            # only one receipt file exists for this turn
+            self.assertEqual(list((root / "memory" / "turn-receipts").glob("*.json")).__len__(), 1)
+
+    def test_tier_downgrade_is_refused(self):
+        # Suppressing already-required personal material with skip is the guardrail
+        # violation the receipt trail exists to catch; re-declaring skip after full
+        # must raise rather than quietly un-require the turn.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            create_receipt("我今天感觉很难过", turn_id="turn.downgrade", tier="full", root=root)
+            with self.assertRaises(ValueError):
+                create_receipt("我今天感觉很难过", turn_id="turn.downgrade", tier="skip", root=root)
+
+    def test_same_outcome_redeclare_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            create_receipt("随便聊聊", turn_id="turn.idem", tier="full", root=root)
+            again = create_receipt("随便聊聊", turn_id="turn.idem", tier="full", root=root)
+            self.assertTrue(again["requires_personal_understanding"])
+            self.assertNotIn("tier_upgraded_at", again)  # no churn when the outcome is unchanged
+
     def test_skip_forces_not_required_but_keeps_suppressed_trail(self):
         decision = classify_personal_turn("我今天感觉很难过", tier="skip")
         self.assertFalse(decision["requires_personal_understanding"])
