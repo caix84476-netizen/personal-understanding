@@ -8,7 +8,7 @@ import argparse
 import json
 from collections import defaultdict
 
-from catalog_utils import ROOT, build_catalog, build_catalog_header, route_catalog, write_catalog
+from catalog_utils import ROOT, build_catalog, build_catalog_header, content_terms, route_catalog, select_hypotheses, single_char_aliases, weighted_query_terms, write_catalog
 from followup_check import check_followups
 from v2_archive import load_v2, v2_audit
 
@@ -19,7 +19,7 @@ def compact_current_state(state: dict) -> dict:
     return {"as_of": state.get("as_of"), "core": trim(state.get("core")), "conditions": trim(state.get("conditions")), "tensions": trim(state.get("tensions")), "lived_examples": trim((state.get("lived_examples") or [])[:5]), "next": state.get("next", []), "format": state.get("format")}
 
 
-def build_v2_survey(query: str = "") -> dict:
+def build_v2_survey(query: str = "", gate_hypotheses: bool = True) -> dict:
     data = load_v2()
     events = [row for row in data.get("events", []) if row.get("status") not in {"archived", "deleted"}]
     entities = data.get("entities", [])
@@ -56,7 +56,21 @@ def build_v2_survey(query: str = "") -> dict:
         facet_map.append({"id": row.get("id"), "label": row.get("label"), "kind": row.get("kind"), "entity_ids": row.get("entity_ids"), "entry_count": entry_count})
     knowledge = [{key: row.get(key) for key in ("id", "kind", "title", "domain", "salience_label")} for row in data.get("knowledge", []) if row.get("status") not in {"archived", "deleted"} and (row.get("kind") in {"model", "value"} or int(row.get("salience", 0) or 0) >= 2)]
     state = compact_current_state(data.get("current_state", {}))
-    return {"version": "2.0.0", "schema": "life-spine + entity archive + contextual facets + current state + follow-up scheduler + causal hypotheses + knowledge cards", "spine": spine, "entities": entity_map, "facets": facet_map, "knowledge": knowledge, "current_state": state, "followups": check_followups(), "hypotheses": [{"id": row.get("id"), "claim": row.get("claim"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in data.get("hypotheses", [])], "audit": v2_audit(), "note": "This is the compact routing map for v2: IDs, titles, labels, and counts only — no bodies or verbatim captures. After picking seeds, use retrieve_v2 --event-ids/--entity-ids for probe expansion; only deep reads verbatim captures. Facets from a single co-occurrence are omitted; probe fills them in via entity pairs. The spine buckets representatives by phase, so early periods (childhood, middle school, etc.) are not pushed out of the map by newer entries."}
+    # Causal-hypothesis gate (shared with retrieve_v2, see catalog_utils): claim/scope/
+    # mechanism travel only when the query's content terms hit the hypothesis text.
+    # Everything else stays a claim-less stub so the model knows it exists without the
+    # causal content loading itself into an ordinary read. --view full is the explicit
+    # "complete catalog" maintenance read, so it bypasses the gate (gate_hypotheses=False).
+    hypo_rows = data.get("hypotheses", [])
+    if gate_hypotheses:
+        query_terms = weighted_query_terms(query)
+        matched_ids = {row.get("id") for row in select_hypotheses(hypo_rows, query_terms, content_terms(query_terms, single_char_aliases(entities)))}
+        hypotheses_map = [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} if row.get("id") in matched_ids else {"id": row.get("id"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in hypo_rows]
+        hypo_note = "Causal hypotheses carry claim/scope/mechanism only when the current query's content terms hit them (普通事实问题不自动加载因果假设); claim-less entries are routing stubs — read the full row via --view full (maintenance) or a query that names the concern."
+    else:
+        hypotheses_map = [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in hypo_rows]
+        hypo_note = "Causal hypotheses are shown in full: --view full is the explicit complete-catalog maintenance read."
+    return {"version": "2.0.0", "schema": "life-spine + entity archive + contextual facets + current state + follow-up scheduler + causal hypotheses + knowledge cards", "spine": spine, "entities": entity_map, "facets": facet_map, "knowledge": knowledge, "current_state": state, "followups": check_followups(), "hypotheses": hypotheses_map, "audit": v2_audit(), "note": "This is the compact routing map for v2: IDs, titles, labels, and counts only — no bodies or verbatim captures. After picking seeds, use retrieve_v2 --event-ids/--entity-ids for probe expansion; only deep reads verbatim captures. Facets from a single co-occurrence are omitted; probe fills them in via entity pairs. The spine buckets representatives by phase, so early periods (childhood, middle school, etc.) are not pushed out of the map by newer entries. " + hypo_note}
 
 
 def main() -> int:
@@ -86,7 +100,7 @@ def main() -> int:
         catalog = build_catalog()
     else:
         catalog = build_catalog_header() if args.view == "survey" else build_catalog()
-    v2 = build_v2_survey(args.query)
+    v2 = build_v2_survey(args.query, gate_hypotheses=(args.view != "full"))
     if args.write:
         write_catalog(catalog)
     if args.view == "full":

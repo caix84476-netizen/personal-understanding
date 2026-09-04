@@ -299,6 +299,8 @@ v2 的检索不是“先把整个档案库塞进模型”，也不是只搜关�
 
 survey 是紧凑路由地图，不含旧记录全量列表；需要按领域展开旧目录时用 `catalog_context.py --view routing --query <消息>`，需要完整目录时用 `--view full`。
 
+因果假设按需携带（2.5.0 起，检索层闸门）：survey 和 probe 里假设默认只显示 id/status/confidence 存根，只有当轮消息的内容词真实命中假设文本时才带出 claim/scope/mechanism。因此**当用户的问题是在求解释（"为什么我会…"）而存根 id 又看着可能相关时，主动用 `personal_catalog --view full` 或把用户的因果措辞原样放进 `--query` 读完整假设**；普通事实问题不要为凑数去翻假设。
+
 ### probe：从入口发散
 
 模型选择一个或多个入口：

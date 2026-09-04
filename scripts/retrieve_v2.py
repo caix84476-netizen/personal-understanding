@@ -6,7 +6,7 @@ configure_utf8_stdio()
 import argparse, json
 from datetime import date, datetime
 from collections import defaultdict
-from catalog_utils import ROOT, content_terms, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
+from catalog_utils import ROOT, content_terms, select_hypotheses, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
 from v2_archive import V2_ROOT, followup_is_due, load_v2
 
 
@@ -183,11 +183,17 @@ def main() -> int:
     timeline_rows = [compact_event(row) for row in selected_events]
     for item, row in zip(timeline_rows, selected_events):
         item["evidence_fidelity"] = evidence_fidelity(row, fidelity_by_fragment)
-    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-3-stopcontent", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
+    # Causal-hypothesis gate (SKILL.md: 普通事实问题不自动加载因果假设): a hypothesis
+    # rides along only when the query's content terms hit its claim/scope/mechanism
+    # text; otherwise the model sees none here and reaches for one deliberately via
+    # the catalog stubs. Selection lives in catalog_utils (shared with the survey).
+    all_hypotheses = data.get("hypotheses", [])
+    carried_hypotheses = select_hypotheses(all_hypotheses, terms, content, weights)
+    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-3-stopcontent", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "hypotheses": {"carried": len(carried_hypotheses), "omitted": max(0, len(all_hypotheses) - len(carried_hypotheses)), "policy": "content-term gate — 普通事实问题不自动加载因果假设"}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
     trace_path = None
     if not args.no_trace:
         trace_path = save_trace(trace, capture_id=args.capture_id)
-    result = {"retrieval_version": "2.0.0", "read": {"level": args.level, "query": args.query}, "timeline": timeline_rows, "entities": [compact_entity(row) for row in selected_entities], "knowledge": [row for row in selected_knowledge], "facets": [compact_facet(row) for row in selected_facets], "current_state": data.get("current_state", {}), "followups": {"due": due}, "hypotheses": data.get("hypotheses", []), "fragments": selected_fragments, "trace": trace, "trace_path": trace_path}
+    result = {"retrieval_version": "2.0.0", "read": {"level": args.level, "query": args.query}, "timeline": timeline_rows, "entities": [compact_entity(row) for row in selected_entities], "knowledge": [row for row in selected_knowledge], "facets": [compact_facet(row) for row in selected_facets], "current_state": data.get("current_state", {}), "followups": {"due": due}, "hypotheses": [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in carried_hypotheses], "fragments": selected_fragments, "trace": trace, "trace_path": trace_path}
     if args.format == "markdown":
         print("# v2 Personal Understanding Read")
         print(f"Read level: {args.level}; query: {args.query or 'global spine'}\n")

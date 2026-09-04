@@ -480,6 +480,46 @@ def weighted_match_score(haystack: str, weights: dict[str, float]) -> float:
     return total / (1 + math.log(1 + len(text)))
 
 
+# Causal hypotheses are explanations, not facts (causal-hypothesis policy / SKILL.md:
+# 因果假设只有在当前问题需要解释时才进入深读；普通事实问题不自动加载它). Carrying every
+# claim into every read both inflates context and smuggles candidate causes in as if
+# they were established record content. The gate below is retrieval-layer engineering,
+# not a model-behavior rule: a hypothesis travels only when the query's signal-bearing
+# terms actually hit its text; otherwise the catalog shows a claim-less stub so the
+# model still knows the hypothesis exists and can reach for it deliberately.
+CONFIDENCE_RANK = {"very-high": 0, "high": 1, "medium-high": 2, "medium": 3, "low-medium": 4, "low": 5}
+
+
+def hypothesis_haystack(row: dict) -> str:
+    values = [str(row.get(key, "")) for key in ("id", "claim", "scope", "mechanism")]
+    values += [str(item) for item in (row.get("alternatives") or [])]
+    values += [str(item) for item in (row.get("supports") or [])]
+    return " ".join(values).casefold()
+
+
+def select_hypotheses(rows: list[dict], terms: list[str], content: set[str], weights: dict[str, float] | None = None, cap: int = 6) -> list[dict]:
+    """Hypotheses the current query is allowed to see (gate rationale above).
+
+    A hypothesis qualifies only on a content-term hit (STOP_TERMS and stray single
+    chars cannot qualify it, same rule as retrieval slots). Ranked by hit weight —
+    raw hit count when no IDF weights are supplied — then confidence, then id.
+    No query, or a query with no content terms → empty: existence stays visible via
+    the catalog's claim-less stubs, content never loads itself.
+    """
+    if not terms or not content:
+        return []
+    scored = []
+    for row in rows:
+        text = hypothesis_haystack(row)
+        hits = [term for term in content if term in text]
+        if not hits:
+            continue
+        score = sum(weights.get(term, 0.0) for term in hits) if weights else float(len(hits))
+        scored.append((score, CONFIDENCE_RANK.get(str(row.get("confidence") or "").casefold(), 3), str(row.get("id", "")), row))
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [row for _, _, _, row in scored[:cap]]
+
+
 def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4) -> dict[str, Any]:
     """Return the global survey plus compatibility domain groupings.
 
