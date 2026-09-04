@@ -20,6 +20,7 @@ from derivation_ledger import (
     link_record,
     load_ledger,
     register_capture,
+    repair_ledger,
 )
 from v2_archive import capture_fragment_parity_errors, capture_records, infer_entity_type
 
@@ -62,7 +63,67 @@ def write_record(root: Path, record_id: str, capture_id: str) -> None:
     )
 
 
+def write_image_capture(root: Path, capture_id: str) -> None:
+    """Lay down an attachment capture under sources/images/ (its ledger link is the
+    only place the record↔attachment association lives; link_record never rewrites
+    the record frontmatter)."""
+    folder = root / "sources" / "images"
+    folder.mkdir(parents=True, exist_ok=True)
+    source = folder / f"{capture_id}.png"
+    source.write_bytes(b"\x89PNG\r\n\x1a\n")
+    meta = {
+        "capture_id": capture_id,
+        "captured_at": "2026-08-26T12:00:00+08:00",
+        "message_kind": "image-attachment",
+        "source_path": source.relative_to(root).as_posix(),
+        "sha256": "test",
+    }
+    source.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
+
+
 class DerivationClosureTests(unittest.TestCase):
+    def test_repair_preserves_attachment_link_recorded_only_in_ledger(self):
+        # §6.2: a multi-capture turn links the attachment capture via link_record,
+        # which stores record_ids in the ledger but never rewrites the record's
+        # verbatim_refs. repair_ledger rebuilds from record references; it must not
+        # drop that ledger-only attachment link and re-open a finalized capture.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_capture(root, "cap.turn.text")
+            write_image_capture(root, "cap.turn.att")
+            write_record(root, "event.turn.demo", "cap.turn.text")
+            register_capture("cap.turn.text", source_path="sources/conversation/cap.turn.text.txt", root=root)
+            register_capture("cap.turn.att", source_path="sources/images/cap.turn.att.png", root=root)
+            link_record("cap.turn.att", "event.turn.demo", root=root)
+            finalize_capture("cap.turn.text", "derived", "正文闭环", root=root)
+            finalize_capture("cap.turn.att", "derived", "附件归档", root=root)
+            repair_ledger(root)
+            ledger = load_ledger(root)
+            self.assertEqual(ledger["cap.turn.att"]["status"], "derived",
+                             "attachment link stored only in the ledger must survive repair")
+            self.assertIn("event.turn.demo", ledger["cap.turn.att"]["record_ids"])
+            # audit must be clean of pending/untracked for these two captures
+            audit = audit_ledger(root)
+            self.assertNotIn("cap.turn.att", audit["pending_capture_ids"])
+
+    def test_repair_purges_link_to_deleted_record(self):
+        # Keeping the declared-link union must not resurrect a link whose target
+        # record was deleted — repair should still drop it and re-open the capture.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_image_capture(root, "cap.gone.att")
+            write_record(root, "event.gone.demo", "cap.turn.text")
+            (root / "memory" / "records" / "event.gone.demo.md").write_text(
+                "\n".join(["---", "id: event.gone.demo", "kind: event", "status: current",
+                            "confidence: high", "sensitivity: ordinary",
+                            "verbatim_refs: fragment.capture.cap.gone.att", "---", "", "x", ""]),
+                encoding="utf-8")
+            register_capture("cap.gone.att", source_path="sources/images/cap.gone.att.png", root=root)
+            link_record("cap.gone.att", "event.gone.demo", root=root)
+            finalize_capture("cap.gone.att", "derived", "附件归档", root=root)
+            (root / "memory" / "records" / "event.gone.demo.md").unlink()
+            repair_ledger(root)
+            self.assertEqual(load_ledger(root)["cap.gone.att"]["status"], "pending")
     def test_capture_registration_is_pending_and_audited(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

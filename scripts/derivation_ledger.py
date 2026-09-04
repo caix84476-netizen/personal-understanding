@@ -106,11 +106,22 @@ def finalize_capture(capture_id: str, disposition: str, reason: str = "", *, roo
         mark_closed_for_capture(capture_id, disposition, root); return entry
 
 def repair_ledger(root: Path = DEFAULT_ROOT) -> dict[str, int]:
-    """Rebuild the projection from immutable captures and record references."""
+    """Rebuild the projection from immutable captures and record references.
+
+    Trust direction: record verbatim_refs/source_refs are the primary truth, but an
+    attachment capture's link lives ONLY in the ledger (link_record never rewrites the
+    record frontmatter), so a pure records→ledger rebuild would silently drop it and
+    re-open a finalized attachment capture (§6.2). We therefore union the record-derived
+    links with the ledger's already-declared links — keeping a declared link only while
+    its target record still exists, so repair can still purge links to deleted records.
+    """
     with mutation_lock(root):
         captures = discover_captures(root); linked, _ = record_capture_links(root); old = load_ledger(root); rebuilt: dict[str, dict[str, Any]] = {}; created = 0
+        record_ids = {parse_frontmatter(p).get("id") for p in (root / "memory" / "records").glob("*.md")}
         for cid, meta in captures.items():
-            created += int(cid not in old); prior = old.get(cid, _entry(cid, meta)); ids = sorted(linked.get(cid, set()))
+            created += int(cid not in old); prior = old.get(cid, _entry(cid, meta))
+            declared = {x for x in prior.get("record_ids", []) if x in record_ids}
+            ids = sorted(linked.get(cid, set()) | declared)
             if ids: status, reason = "derived", prior.get("finalization_reason") or "repair: linked record discovered"
             elif prior.get("status") == "no-derivation-needed": status, reason = "no-derivation-needed", prior.get("finalization_reason")
             else: status, reason = "pending", None
