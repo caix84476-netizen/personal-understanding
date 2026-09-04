@@ -11,6 +11,7 @@
 - 审计可见性与兼容层（§6.7/§6.8 + 新发现）：对话开场模板中文化；legacy `query_context`/`retrieve_context` 标 DEPRECATED 并写入 SKILL 维护清单（`review_context` 澄清为活依赖）；悬空实体引用显形（`entity_refs_for` 曾静默丢弃→orphan 审计永不触发，现投影 `unresolved_referents` 发 `entity-ref-dangling`，真实档案 7 处清零，SKILL 承诺的 `unresolved_referent` 死字段接通）；`review_v2 --deep` 新增薄证据假设、无 capture 锚点反馈两条审计警告（提示不拦停，守行为约束）。
 - 文档与测试：references 与实现对齐（fidelity 三级现实/第四态归属/文件清单/trace schema 拆分并删自动关联承诺）；`restore_stable` 补 4 项测试（此前零锁死）；测试 113→150，各修复带回归锁；版本同步测试扩面到 README×2 + CHANGELOG 顶部，堵"只 pin 前四处"漂移盲区（新发现）。
 - 发布前验收轮遗留修复（上一班 §4 清单的三个 [中] 项，发布前就地修掉）：① 因果假设按需携带——政策承诺"普通事实问题不自动加载"而 retrieve_v2/catalog 每次全量带 claim，现共享闸门 `select_hypotheses`（内容词命中才携带、上限 6、目录层降级为无 claim 存根、`--view full` 作为显式完整读取绕闸），SKILL 补"求解释时主动读完整假设"的模型指引；② add_followup 缺 source_refs/到期规则时返回值附提醒（不拒收，守行为约束），review_v2 新增 `followup-without-source-or-rule` 审计警告（只盯 open 条目）；③ `resolve_followup` 可选 `capture_id` 绑定用户回答原话（须存在于 ledger，假 id 拒绝），MCP schema 与 CLI `--capture-id` 双路接通。
+- 验收轮新发现并修复——锚定比值降权（scoring 升为 `weighted-idf-4-anchor`）：按矩阵原句（整句口语）重跑 18 轮回测发现，长句切出的意外 n-gram（"郎我""卡了"这类跨词切片）在 427 条量级的语料上 df≈0-1、拿满 IDF（log(1+N/1)），信号倒置——真决定词"只狼"（df=4）权重反而低于噪音切片，无关长记录靠"小时+阶段"两个词就能霸占 timeline 前排（T02/T13 实测）。修复：事件与知识卡得分乘以"该记录命中的最强词重 ÷ 查询最强词重"（实体分与实体反哺 boost 不降——实体命中本身就是查询点名的锚），route_catalog 查重排序同步接入；实测零回归、T08 知识卡 2→1、T16 职业路线 11→5、T12 哥哥冲突 13→9。已验证并放弃的方案：句形自适应低 df 降权（0.35×）——把青旅/拿刀等真金决定词与彩票词一起误伤，T14 青旅住宿记录掉出前排，回退。诚实边界写入 SKILL 双语：probe 契约输入是足迹关键词，整句原话直查的噪音地板（n-gram 无分词的固有极限）无法在检索层根除，模型侧先提关键词再 probe。
 
 ## 2.4.1 — 2026-09-04 — retrieval recall fix: weighted ranking for probe and routing
 

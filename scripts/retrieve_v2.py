@@ -6,7 +6,7 @@ configure_utf8_stdio()
 import argparse, json
 from datetime import date, datetime
 from collections import defaultdict
-from catalog_utils import ROOT, content_terms, select_hypotheses, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
+from catalog_utils import ROOT, anchor_ratio, content_terms, select_hypotheses, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
 from v2_archive import V2_ROOT, followup_is_due, load_v2
 
 
@@ -122,9 +122,14 @@ def main() -> int:
 
     entity_scores = {row.get("id"): row_score(row, weights) for row in entities}
     entity_content_ids = {row.get("id") for row in entities if row.get("id") in entity_scores and content_hit(row)}
+    # Anchor demotion (catalog_utils.anchor_ratio): sentence-form queries carry many
+    # incidental bigrams; only the query's rare decisive term anchors a relevant row.
+    # Applies to the row's own text score — entity feedback keeps its full weight,
+    # because a matched entity IS an anchor the query named.
+    max_query_weight = max((weights.get(term, 0.0) for term in content), default=0.0)
     ENTITY_EVENT_BOOST = 0.6
     def event_value(row: dict) -> float:
-        value = row_score(row, weights)
+        value = row_score(row, weights) * anchor_ratio(haystack(row), weights, content, max_query_weight)
         boost = max((entity_scores.get(ref, 0.0) for ref in row.get("entity_refs", []) if ref in entity_content_ids), default=0.0)
         return value + ENTITY_EVENT_BOOST * boost
     def qualifies(row: dict) -> bool:
@@ -146,7 +151,7 @@ def main() -> int:
     if len(selected_entities) < args.max_entities:
         selected_entities += [row for row in entities if row.get("id") in entity_ids and row not in selected_entities][: max(0, args.max_entities - len(selected_entities))]
     entity_ids = {row.get("id") for row in selected_entities}
-    ranked_knowledge = sorted(((row_score(row, weights) + (7 if row.get("record_id") in explicit_events else 0), row) for row in knowledge), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("id", "")))
+    ranked_knowledge = sorted(((row_score(row, weights) * anchor_ratio(haystack(row), weights, content, max_query_weight) + (7 if row.get("record_id") in explicit_events else 0), row) for row in knowledge), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("id", "")))
     selected_knowledge = [row for value, row in ranked_knowledge if row.get("record_id") in explicit_events]
     selected_knowledge += [row for value, row in ranked_knowledge if row not in selected_knowledge and ((value > 0 and content_hit(row)) or not terms)][:18]
     for row in selected_knowledge:
@@ -189,7 +194,7 @@ def main() -> int:
     # the catalog stubs. Selection lives in catalog_utils (shared with the survey).
     all_hypotheses = data.get("hypotheses", [])
     carried_hypotheses = select_hypotheses(all_hypotheses, terms, content, weights)
-    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-3-stopcontent", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "hypotheses": {"carried": len(carried_hypotheses), "omitted": max(0, len(all_hypotheses) - len(carried_hypotheses)), "policy": "content-term gate — 普通事实问题不自动加载因果假设"}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
+    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-4-anchor", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "hypotheses": {"carried": len(carried_hypotheses), "omitted": max(0, len(all_hypotheses) - len(carried_hypotheses)), "policy": "content-term gate — 普通事实问题不自动加载因果假设"}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
     trace_path = None
     if not args.no_trace:
         trace_path = save_trace(trace, capture_id=args.capture_id)

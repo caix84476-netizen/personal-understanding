@@ -520,6 +520,33 @@ def select_hypotheses(rows: list[dict], terms: list[str], content: set[str], wei
     return [row for _, _, _, row in scored[:cap]]
 
 
+def anchor_ratio(text: str, weights: dict[str, float], content: set[str], max_query_weight: float) -> float:
+    """Anchor demotion for sentence-form queries (acceptance-round finding).
+
+    Keyword queries name their target (只狼), so any hit is meaningful. A full
+    sentence, though, carries dozens of incidental content bigrams (小时/阶段/那个),
+    and a LONG record matching a handful of those can outscore the record that
+    matches the query's rare decisive term — the T02/T13 timeline floods were built
+    from exactly such records (the #1 junk row matched only 小时+阶段 out of 62
+    content terms). Demote each row by the strength of its BEST matched term
+    relative to the query's best term: a record whose strongest hit is a common
+    bigram cannot outrank one that hit the anchor word. Self-normalizing: when the
+    query has no rare term at all, every ratio approaches 1 and ranking degrades to
+    the previous behavior. Rows with NO content-term hit keep ratio 1 — they are
+    already gated out of slots elsewhere, and entity-feedback-boosted rows must not
+    be double-punished for their own text.
+    """
+    if not content or max_query_weight <= 0:
+        return 1.0
+    best = 0.0
+    for term in content:
+        if term in text:
+            weight = weights.get(term, 0.0)
+            if weight > best:
+                best = weight
+    return best / max_query_weight if best else 1.0
+
+
 def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4) -> dict[str, Any]:
     """Return the global survey plus compatibility domain groupings.
 
@@ -537,11 +564,18 @@ def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4)
 
     # Same weighted ranking as probe: IDF over current records so rare terms
     # (只狼/猫学派) outrank common chars, and long summaries stop dominating.
+    # The anchor demotion (below) applies here too: dedup queries are verbatim
+    # user sentences, and a record matching only common sentence bigrams must
+    # not outrank the one that hit the query's rare term.
+    terms = weighted_query_terms(query)
+    content = content_terms(terms, frozenset())
     corpus = [searchable(item) for item in catalog["records"]]
     weights = term_weights(terms, corpus)
+    max_query_weight = max((weights.get(term, 0.0) for term in content), default=0.0)
 
     def score(item: dict[str, Any]) -> tuple[float, float, int, str]:
-        direct = weighted_match_score(searchable(item), weights)
+        text = searchable(item)
+        direct = weighted_match_score(text, weights) * anchor_ratio(text, weights, content, max_query_weight)
         current = 1 if item.get("status") == "current" else 0
         kind = 1 if item.get("kind") in ROUTING_KINDS else 0
         return (direct * 100 + current * 10 + kind, direct, current, item.get("id", ""))
