@@ -7,7 +7,9 @@ archives that need a first entry point.
 
 Output is JSON. Ranking: due follow-ups first (with their context), then the
 emptiest domains, then a stale-current-state nudge. Suggestions come only from
-real gaps in the archive — never invented psychology.
+real gaps in the archive — never invented psychology. All prompts are Chinese
+(2.5.0 §6.7): the whole skill works in the user's language, so an English starter
+template would read as noise when the model speaks it out loud.
 """
 from __future__ import annotations
 
@@ -20,18 +22,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 DOMAIN_QUESTIONS = {
-    "domain.education-career": "What's one moment from school or work that changed how you see yourself?",
-    "domain.family-home": "What's a rule, habit, or atmosphere from the place you grew up that still shows up in your life?",
-    "domain.health-life": "How have your energy, sleep, and stress actually been this week?",
-    "domain.learning-interests": "What's something you've been learning or playing with lately that you'd love to go deeper on?",
-    "domain.relationships": "Who's someone who left an impression on you recently — and what happened?",
-    "domain.self-collaboration": "When you work and plan — with AI or alone — what style of help actually works for you?",
+    "domain.education-career": "学校或工作里，有没有哪件事让你重新看了自己一眼？",
+    "domain.family-home": "你从小待的那个家里，有没有哪条规矩、习惯或氛围，到今天还在你身上？",
+    "domain.health-life": "这周你的精力、睡眠、压力，实际是个什么状态？",
+    "domain.learning-interests": "最近有没有在学什么、玩什么，是你想再往深里挖的？",
+    "domain.relationships": "最近谁给你留下了点印象？当时怎么个情况？",
+    "domain.self-collaboration": "你干活、做计划的时候——不管是跟 AI 还是自己来——什么样的帮忙方式对你真正管用？",
 }
 
 GENERIC_OPENERS = [
-    "What's a recent moment — big or tiny — that you suspect says something about who you are?",
-    "Is there a decision you're weighing right now? Talking it out here means future-you can pick up the thread.",
-    "Who's a person that shaped you, and what's one story with them you'd want remembered the way it actually happened?",
+    "最近有没有哪个瞬间，不管大小，你隐约觉得它挺能说明你是谁的？",
+    "眼下有在纠结的决定吗？在这儿聊明白，以后翻回来就能接着想。",
+    "有没有哪个人塑造了你，你想留一个真实发生过的那段事？",
 ]
 
 FRONTMATTER_RE = re.compile(r"^---\s*$", re.MULTILINE)
@@ -134,9 +136,9 @@ def build_starters(limit: int) -> dict:
 
     for item in open_followups()[:1]:
         starters.append({
-            "question": f"Earlier you left this open: “{item['question']}” — how did it turn out?",
+            "question": f"之前你留了个口子：“{item['question']}”——后来怎么样了？",
             "domain": "follow-up",
-            "reason": "an open loop you created; checking back keeps the archive honest",
+            "reason": "你自己开的一条待回访；按时收口档案才不失真",
         })
 
     empty_domains = [d for d in branch_domains() if counts.get(d, 0) == 0]
@@ -148,11 +150,11 @@ def build_starters(limit: int) -> dict:
         question = DOMAIN_QUESTIONS.get(domain)
         if not question:
             label = domain.removeprefix("domain.").replace("-", " ")
-            question = f"What's a story or memory that fits your {label} side?"
+            question = f"「{label}」这一面，有什么事或记忆值得记一笔？"
         reason = (
-            "this domain has no records yet — a good first thread"
+            "这个领域还没有记录——开个第一线正好"
             if counts.get(domain, 0) == 0
-            else f"only {counts[domain]} record(s) here so far"
+            else f"目前这儿只有 {counts[domain]} 条记录"
         )
         starters.append({"question": question, "domain": domain, "reason": reason})
 
@@ -160,7 +162,7 @@ def build_starters(limit: int) -> dict:
         for opener in GENERIC_OPENERS:
             if len(starters) >= limit:
                 break
-            starters.append({"question": opener, "domain": "any", "reason": "fresh archive — any true story is a good seed"})
+            starters.append({"question": opener, "domain": "any", "reason": "档案刚起步——任何一段真实的事都是好种子"})
 
     gap_days = last_capture_days()
     return {
@@ -171,7 +173,7 @@ def build_starters(limit: int) -> dict:
             "open_followups": len(open_followups()),
             "days_since_last_capture": gap_days,
         },
-        "usage": "Ask ONE starter warmly in your own words; after the user answers, capture the message verbatim and follow the normal derive-and-answer flow. Never dump the whole list as an interrogation.",
+        "usage": "用你自己的话、自然暖心地挑一条问，只问一条；用户答完后原样捕获消息，走正常的派生+回答流程。不要把整个清单倒出来连环追问。",
     }
 
 
