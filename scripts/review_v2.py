@@ -30,6 +30,14 @@ def report(deep: bool = False) -> dict:
     due = [row for row in followups if followup_is_due(row)]
     if due: warnings.append({"code": "followups-due", "count": len(due), "ids": [row.get("id") for row in due]})
     if not hypotheses: warnings.append({"code": "hypothesis-layer-empty", "note": "Having no candidate causal hypotheses is not an error; generate them only when an explanation is needed."})
+    # causal-hypothesis-policy.md wants ≥2 supports per hypothesis. That is an
+    # AUDIT warning, not a write gate (hard constraint #1): blocking MCP
+    # add_hypothesis on support count would coerce the model the same way §6.1's
+    # false-error did. Instead the deep review surfaces thin hypotheses so the
+    # model strengthens or downgrades them.
+    thin = [row.get("id") for row in hypotheses if len(row.get("supports") or []) < 2]
+    if thin:
+        warnings.append({"code": "hypothesis-thin-evidence", "count": len(thin), "ids": thin[:12], "note": "候选假设支持证据不足两条：补证据、降级为观察，或在反例出现时改判；不得当作事实叙述。"})
     feedback = read_feedback(ROOT / "memory" / "v2" / "feedback.jsonl")
     if feedback:
         feedback_summary = miss_summary(feedback)
