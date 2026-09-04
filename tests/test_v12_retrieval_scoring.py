@@ -72,6 +72,17 @@ class TermWeightTests(unittest.TestCase):
         # a query with no content terms at all demands nothing (all records pass)
         self.assertEqual(content_terms(["防"], set()), set())
 
+    def test_closed_class_function_words_are_never_content(self):
+        # 怎么 is rare in a strategy-free archive but referentially empty; IDF would
+        # score it like a proper noun. It must be excluded from content terms even
+        # at 2 chars, and demoted in weight like noise.
+        from catalog_utils import STOP_TERMS
+        self.assertNotIn("怎么", content_terms(["只狼", "怎么"], set()))
+        self.assertIn("怎么", STOP_TERMS)
+        docs = ["怎么 这样"] * 5 + ["只狼 弦一郎"] * 95  # 怎么 rarer than a real term
+        weights = term_weights(["怎么", "弦一郎"], docs)
+        self.assertLess(weights["怎么"], weights["弦一郎"])
+
 
 class DeepSeedPriorityTests(unittest.TestCase):
     # 2.5.0 §5.2: a record explicitly requested for deep verification must surface

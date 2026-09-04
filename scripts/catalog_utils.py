@@ -414,11 +414,26 @@ def single_char_aliases(rows: list[dict]) -> set[str]:
     return out
 
 
+# Closed-class Chinese function words: interrogatives, copulas, particles. They are
+# referentially empty for archive recall, yet a word like 怎么 can be RARE in a given
+# archive (few records quote a "how to" question), so IDF mistakes it for a distinctive
+# term and pulls in every record that happens to contain it — the one survivor of the
+# §4.1 single-char flood (T02: family/health events surfaced for a 只狼 strategy query,
+# each matched only on 怎么). Demote to noise AND never let one qualify a record for a
+# retrieval slot — the single exception to "2-char ⇒ content". Additions must stay
+# closed-class; never put open domain nouns here.
+STOP_TERMS = frozenset({
+    "怎么", "怎样", "咋样", "咋", "如何", "什么", "啥", "为啥", "为何", "为什么",
+    "哪个", "哪些", "哪里", "谁", "是否", "呢", "吗", "吧", "啊",
+})
+
+
 def content_terms(terms: list[str], alias_singles: set[str]) -> set[str]:
     """Terms that carry real signal: Latin tokens, multi-char CJK, or a single char
     that is a curated entity alias. A record whose only hits are outside this set
-    matched pure noise (a stray 防/钱/在) and must not consume a retrieval slot."""
-    return {t for t in terms if t.isascii() or len(t) >= 2 or t in alias_singles}
+    matched pure noise (a stray 防/钱/在) or a closed-class function word (怎么) and
+    must not consume a retrieval slot."""
+    return {t for t in terms if t not in STOP_TERMS and (t.isascii() or len(t) >= 2 or t in alias_singles)}
 
 
 def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = frozenset()) -> dict[str, float]:
@@ -428,7 +443,9 @@ def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = fr
     CJK chars are demoted to near-noise. Corpus-wide document frequency is what
     stops common chars from outranking distinctive proper nouns. A single char that
     is a curated entity alias (see single_char_aliases) is referential, not noise, and
-    keeps the multi-char bonus so 妈/爸 queries can reach the family cluster.
+    keeps the multi-char bonus so 妈/爸 queries can reach the family cluster. Closed-class
+    function words (STOP_TERMS) are demoted like noise even when rare — IDF alone cannot
+    tell a rare proper noun from a rare 怎么.
     """
     total = max(len(docs), 1)
     weights: dict[str, float] = {}
@@ -437,7 +454,9 @@ def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = fr
             continue
         df = sum(1 for doc in docs if term in doc)
         weight = math.log(1 + total / max(df, 1))
-        if term.isascii():
+        if term in STOP_TERMS:
+            weight *= 0.15
+        elif term.isascii():
             weight *= 1.6
         elif len(term) >= 2 or term in alias_singles:
             weight *= 1.3
