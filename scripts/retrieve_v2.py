@@ -165,9 +165,10 @@ def main() -> int:
     assoc_adj = ppr.build_graph(events, entities, knowledge, facets)
     assoc_exclude = {row.get("record_id") for row in selected_events if row.get("record_id")}
     assoc_exclude |= {row.get("record_id") for row in selected_knowledge if row.get("record_id")}
+    seed_weight_map = {row.get("id"): entity_scores.get(row.get("id"), 0.0) for row in entities if row.get("id") in entity_content_ids}
     association_rows = ppr.associations(assoc_adj, sorted(entity_content_ids), events, knowledge,
                                         exclude_record_ids=assoc_exclude, max_results=6,
-                                        entity_rows=entities)
+                                        entity_rows=entities, seed_weights=seed_weight_map)
     selected_facets = [row for row in facets if set(row.get("entry_refs", [])) & event_ids or row.get("entity_id") in entity_ids or set(row.get("entity_ids", [])) & entity_ids]
     selected_facets = selected_facets[:40]
     selected_fragment_ids = set()
