@@ -48,7 +48,15 @@ def main() -> int:
             if row.get("kind") in {"event", "decision"}: timeline.append(f"- {row.get('valid_from') or row.get('last_confirmed') or 'undated'} — `{row.get('id')}` — {row.get('status')}")
         atomic_write_text(ROOT / "memory" / "timeline.md", "\n".join(timeline) + "\n")
         catalog = build_catalog(); write_catalog(catalog); v2 = build_archive()
-    print(f"视图已重建： {len(rows)} 条记录，{len(current)} 条当前记录；目录 {catalog['counts']['records']} 条记录/{catalog['counts']['sources']} 个来源；v2 时间条目 {v2['counts']['timeline_entries']} / 实体 {v2['counts']['entities']} / 原话片段 {v2['verbatim_captures']}")
+        # 2.6.0: refresh the self-trained archive lexicon alongside the views so the
+        # query-slice filter (lexicon.py) always sees the current archive vocabulary.
+        lexicon_count = 0
+        try:
+            import lexicon as _lexicon
+            lexicon_count = _lexicon.persist_archive_terms()
+        except OSError as exc:
+            print(f"archive-lexicon rebuild failed (retrieval falls back to live build): {exc}")
+    print(f"视图已重建： {len(rows)} 条记录，{len(current)} 条当前记录；目录 {catalog['counts']['records']} 条记录/{catalog['counts']['sources']} 个来源；v2 时间条目 {v2['counts']['timeline_entries']} / 实体 {v2['counts']['entities']} / 原话片段 {v2['verbatim_captures']} / 档案词表 {lexicon_count} 词")
     return 0
 
 

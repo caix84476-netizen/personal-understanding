@@ -11,6 +11,8 @@ from pathlib import Path
 from storage import atomic_write_text
 from typing import Any
 
+import lexicon
+
 ROOT = Path(__file__).resolve().parents[1]
 RECORDS = ROOT / "memory" / "records"
 BRANCHES = ROOT / "memory" / "branches"
@@ -387,6 +389,13 @@ def weighted_query_terms(query: str) -> list[str]:
     Single chars match 60%+ of all records (在/一/人/看…), which lets long records
     pile up cheap hits and bury rare decisive terms (只狼/弦一郎/猫学派). A single-char
     term is only kept when the query itself is that one char.
+
+    2.6.0: mixed CJK/Latin proper nouns are glued as extra terms (巫师3, 晕3D — the
+    CJK/ASCII boundary otherwise splits the sharpest anchor a query carries), and
+    the slice list is cleaned by the lexicon (resources/lexicon: vendored jieba
+    dict + archive self-trained proper nouns). The lexicon only deletes OOV
+    cross-word slices and stray ASCII single chars; when nothing content-bearing
+    survives it falls back to the unfiltered list, so it can never blind recall.
     """
     compact = query.casefold()
     terms: list[str] = []
@@ -397,7 +406,10 @@ def weighted_query_terms(query: str) -> list[str]:
         terms.extend(run[index : index + size] for size in (2, 3, 4) for index in range(len(run) - size + 1))
         if len(run) == 1:
             terms.append(run)
-    return list(dict.fromkeys(term for term in terms if term))
+    terms.extend(lexicon.mixed_run_terms(query))
+    terms = list(dict.fromkeys(term for term in terms if term))
+    kept, _dropped = lexicon.filter_query_terms(terms)
+    return kept
 
 
 def single_char_aliases(rows: list[dict]) -> set[str]:
@@ -432,8 +444,16 @@ def content_terms(terms: list[str], alias_singles: set[str]) -> set[str]:
     """Terms that carry real signal: Latin tokens, multi-char CJK, or a single char
     that is a curated entity alias. A record whose only hits are outside this set
     matched pure noise (a stray 防/钱/在) or a closed-class function word (怎么) and
-    must not consume a retrieval slot."""
-    return {t for t in terms if t not in STOP_TERMS and (t.isascii() or len(t) >= 2 or t in alias_singles)}
+    must not consume a retrieval slot.
+
+    2.6.0: a lone ASCII char ("3" out of 巫师3) is not signal either — inside
+    record ids and dates (20260830) it matches nearly every row and was the #1
+    junk qualifier measured on 2026-09-05. It qualifies only when it is the
+    entire query (a bare "3" is the user's whole intent, unlikely but legal)."""
+    core = {t for t in terms if t not in STOP_TERMS and ((t.isascii() and len(t) >= 2) or len(t) >= 2 or t in alias_singles)}
+    if len(terms) == 1 and terms[0].isascii():
+        core = set(terms)
+    return core
 
 
 def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = frozenset()) -> dict[str, float]:
@@ -446,6 +466,12 @@ def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = fr
     keeps the multi-char bonus so 妈/爸 queries can reach the family cluster. Closed-class
     function words (STOP_TERMS) are demoted like noise even when rare — IDF alone cannot
     tell a rare proper noun from a rare 怎么.
+
+    2.6.0: lexicon-OOV CJK slices (neither the vendored jieba dict nor the
+    self-trained archive lexicon knows them — cross-word accidents like 郎我/段那)
+    are capped at ×0.4. They keep recall — a sole hit still wins a relative
+    ranking — but can no longer out-anchor dictionary-known decisive terms, which
+    is what let sentence-form queries push unrelated long records forward.
     """
     total = max(len(docs), 1)
     weights: dict[str, float] = {}
@@ -462,6 +488,8 @@ def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = fr
             weight *= 1.3
         else:
             weight *= 0.15
+        if len(term) >= 2 and not term.isascii() and not lexicon.known(term) and not lexicon.is_mixed(term):
+            weight *= 0.4
         weights[term] = weight
     return weights
 
@@ -567,7 +595,6 @@ def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4)
     # The anchor demotion (below) applies here too: dedup queries are verbatim
     # user sentences, and a record matching only common sentence bigrams must
     # not outrank the one that hit the query's rare term.
-    terms = weighted_query_terms(query)
     content = content_terms(terms, frozenset())
     corpus = [searchable(item) for item in catalog["records"]]
     weights = term_weights(terms, corpus)
