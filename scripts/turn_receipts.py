@@ -10,7 +10,7 @@ from storage import atomic_write_text, mutation_lock
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]+$")
 EXPLICIT = ("记住", "归档", "存下来", "个人理解", "我的档案", "我为什么会", "我怎么会这样")
-MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天", "昨天", "玩到", "看完", "遇到", "感觉", "感到", "觉得", "害怕", "恶心", "难过", "开心", "焦虑", "生气", "委屈", "思考", "喜欢", "讨厌", "偏好", "决定", "选择", "拒绝", "后悔", "朋友", "家人", "同学", "老师", "学校", "工作", "身体", "恋爱", "父母", "自己", "室友", "吵架", "分手", "痘痘")
+MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天", "昨天", "玩到", "看完", "遇到", "感觉", "感到", "觉得", "害怕", "恶心", "难过", "开心", "焦虑", "生气", "委屈", "思考", "喜欢", "讨厌", "偏好", "决定", "选择", "拒绝", "后悔", "朋友", "家人", "同学", "老师", "学校", "工作", "身体", "恋爱", "父母", "自己", "室友", "吵架", "分手", "痘痘", "好丧", "很丧", "挺丧", "emo", "低落")
 # STRONG_MARKERS fire without a first-person pronoun (2.5.0 §8): Chinese routinely
 # drops the subject ("最近状态不太好", "下巴冒痘了挺烦"), and the old first-AND-marker
 # rule missed exactly the抒情感慨/状态更新 turns the two-tier design most wants.
@@ -19,7 +19,7 @@ MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天",
 # that double as tech jargon stay OUT (a missed low-signal turn is recoverable via
 # the tier=full declaration + §8.1 upgrade path; a tech turn forced into capture is
 # churn the user feels every session).
-STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦")
+STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦", "emo", "低落", "郁闷", "崩溃", "疲惫", "很丧", "好丧", "有点丧", "挺丧", "丧得")  # 丧 须多字形态："丧尸"是游戏名词（实测误触发足迹轮）
 TECHNICAL = ("python", "javascript", "typescript", "代码", "配置", "报错", "bug", "mcp", "插件", "仓库", "git", "接口", "数据库", "部署")
 
 def now_iso() -> str: return datetime.now().astimezone().isoformat(timespec="seconds")
