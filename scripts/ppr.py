@@ -69,19 +69,29 @@ def build_graph(events: list[dict], entities: list[dict], knowledge: list[dict],
     return adj
 
 
-def personalized_pagerank(adj: dict[str, set[str]], seeds: list[str], teleport: float = 0.15, iterations: int = 4) -> dict[str, float]:
-    """Power-iteration PPR. Seeds equally weighted; unreachable nodes stay at 0.
+def personalized_pagerank(adj: dict[str, set[str]], seeds: list[str], teleport: float = 0.15, iterations: int = 4, seed_weights: dict[str, float] | None = None) -> dict[str, float]:
+    """Power-iteration PPR. Unreachable nodes stay at 0.
 
     4 iterations ≈ 2-3 hop local spread, deliberately NOT a converged global
     rank: the archive has hub entities (ai-agi 68 mentions, home 63, … median 6)
     and a converged PPR lets them absorb all mass and spray it over every
     neighbour, turning "association" into generic popularity. Local spread keeps
-    the candidates in the seed's actual neighbourhood."""
+    the candidates in the seed's actual neighbourhood. (Prior art: HippoRAG's
+    run_ppr uses damping 0.5 on the undirected projection — an even more
+    aggressive locality knob; we reach the same effect via low iteration count
+    on stdlib. 2.6.1: seeds may carry non-uniform reset weights — the query's
+    lexical hit strength decides which seed dominates the spread, as HippoRAG
+    does with its reset_prob vector.)"""
+    seed_weights = seed_weights or {}
     seeds = [s for s in seeds if s in adj] or [s for s in seeds]
     if not seeds:
         return {}
     seed_set = set(seeds)
-    rank = {node: (1.0 / len(seeds) if node in seed_set else 0.0) for node in adj}
+    raw = {s: max(float(seed_weights.get(s, 0.0)), 0.0) for s in seeds}
+    if sum(raw.values()) <= 0:
+        raw = {s: 1.0 for s in seeds}
+    total = sum(raw.values())
+    rank = {node: (raw[node] / total if node in seed_set else 0.0) for node in adj}
     for _ in range(iterations):
         nxt = {node: 0.0 for node in adj}
         for node, score in rank.items():
@@ -102,7 +112,7 @@ def personalized_pagerank(adj: dict[str, set[str]], seeds: list[str], teleport: 
 def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict], knowledge: list[dict],
                  exclude_record_ids: set[str] | None = None, max_results: int = 6,
                  records_per_seed: int = 3, neighbour_mention_cap: int = 30,
-                 entity_rows: list[dict] | None = None) -> list[dict]:
+                 entity_rows: list[dict] | None = None, seed_weights: dict[str, float] | None = None) -> list[dict]:
     """Associative candidates the lexical channels missed, in two tiers.
 
     Tier 1 — seed projections: records the query-named entities already carry at
@@ -120,7 +130,7 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
     if not seeds:
         return []
     exclude = set(exclude_record_ids or set())
-    rank = personalized_pagerank(adj, seeds)
+    rank = personalized_pagerank(adj, seeds, seed_weights=seed_weights)
     seed_set = set(seeds)
     events_by_ref: dict[str, list[dict]] = defaultdict(list)
     for row in events:
@@ -176,14 +186,24 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
         for rid, row, kind in projected[:records_per_seed]:
             push(rid, row, kind, f"seed:{seed}", rank.get(seed, 0.0))
     # Tier 2: spread neighbours the query did not name, hubs capped out.
+    # SYNAPSE (ACL 2026) gates propagation with a sigmoid activation
+    # σ(γ(s-θ)), γ=5, θ=0.5 — activation below the cognitive threshold is
+    # damped, not hard-cut. We gate each neighbour by its spread relative to
+    # the strongest neighbour: nodes the user would not actually "think of"
+    # crush to the tail instead of occupying slots by mere positivity.
+    neighbour_scores = [(score, node) for node, score in rank.items()
+                        if node not in seed_set and node.startswith("entity.") and score > 0
+                        and mention.get(node, 0) <= neighbour_mention_cap]
+    strongest = max((s for s, _ in neighbour_scores), default=0.0)
+    def _gate(s: float) -> float:
+        if strongest <= 0: return 1.0
+        return 1.0 / (1.0 + 2.718281828459045 ** (-5.0 * (s / strongest - 0.5)))
     neighbour_nodes = sorted(
-        ((score, node) for node, score in rank.items()
-         if node not in seed_set and node.startswith("entity.") and score > 0
-         and mention.get(node, 0) <= neighbour_mention_cap),
-        key=lambda pair: -pair[0])
-    for score, node in neighbour_nodes:
+        ((_gate(s), s, node) for s, node in neighbour_scores),
+        key=lambda triple: (-triple[0], -triple[1]))
+    for gate_value, score, node in neighbour_nodes:
         for rid, row, kind in records_of(node)[:1]:
-            push(rid, row, kind, node, score)
+            push(rid, row, kind, node, score * gate_value)
             break
     # global spread order across both tiers before the budget cut
     candidates.sort(key=lambda item: -item["spread_score"])
