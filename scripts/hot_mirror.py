@@ -24,9 +24,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-SRC = Path(r"C:\Users\Administrator\.codex\skills")
-DST = Path(r"C:\Users\Administrator\.pu-hot-mirror")
-LOG = Path(r"C:\Users\Administrator\.codex\skills\personal-understanding\backups\hot-mirror.log")
+PU = "personal-understanding"
+# Defaults derive from the user profile so the script ships without
+# machine-specific literals; every path is overridable via env.
+SRC = Path(os.environ.get("PU_SKILLS_DIR", str(Path.home() / ".codex" / "skills")))
+DST = Path(os.environ.get("PU_HOT_MIRROR_DIR", str(Path.home() / ".pu-hot-mirror")))
+LOG = Path(os.environ.get("PU_HOT_MIRROR_LOG", str(SRC / PU / "backups" / "hot-mirror.log")))
 EXCLUDES = [".git", "__pycache__", "backups", "logs", ".pytest_cache", "node_modules"]
 PU = "personal-understanding"
 STATE_DIRS = ["memory", "sources"]

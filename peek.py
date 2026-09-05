@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Compact view of retrieve_v2 probe/deep output for human (model) grading.
-Mechanical extraction only: prints ranked ids + scores, never judges."""
+Mechanical extraction only: prints ranked ids + scores, never judges.
+Usage: from a repo/sandbox ROOT run  python peek.py <capture-id> <query> [probe|deep] [extra retrieve_v2 args]
+--maintenance is injected automatically so grading works without a turn capture."""
 import json, subprocess, sys, pathlib
 sys.path.insert(0, "scripts")
 
@@ -13,7 +15,7 @@ def run(args):
 def main():
     cap = sys.argv[1]; query = sys.argv[2]; level = sys.argv[3] if len(sys.argv) > 3 else "probe"
     extra = sys.argv[4:]
-    d = run(["scripts/retrieve_v2.py", "--query", query, "--level", level, "--capture-id", cap, "--format", "json"] + extra)
+    d = run(["scripts/retrieve_v2.py", "--maintenance", "--query", query, "--level", level, "--capture-id", cap, "--format", "json"] + extra)
     tl = d.get("timeline") or []
     print(f"== timeline ({len(tl)}) ==")
     for i, e in enumerate(tl):

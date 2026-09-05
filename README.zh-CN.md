@@ -133,7 +133,7 @@ python scripts/open_dashboard.py                # Windows：双击 open-dashboar
 
 **环境要求：** Python 3.10+ · 仅标准库，零 pip 依赖 · Windows / macOS / Linux。
 
-**偏好 pip？** MCP 服务和安装器也发布在 [PyPI](https://pypi.org/project/personal-understanding/)：`pip install personal-understanding`，然后运行 `personal-understanding-install` 注册本地 MCP 服务。（pip 包只含 Python 侧；完整的 skill 大脑——`SKILL.md` + 面板——请用上面的 clone 步骤。）**自 2.2.1 起 wheel 不再是过期快照**——包内 37 个文件与源码 `scripts/` 逐字节一致。仍有一处限制：`personal-understanding-install` 只注册服务、不引导档案根目录，从零开始请先运行 `python -m personal_understanding.init_archive`。需要完整 skill 大脑仍推荐上面的 clone 步骤。
+**偏好 pip？** MCP 服务和安装器也发布在 [PyPI](https://pypi.org/project/personal-understanding/)：`pip install personal-understanding`，然后运行 `personal-understanding-install` 注册本地 MCP 服务。（pip 包只含 Python 侧；完整的 skill 大脑——`SKILL.md` + 面板——请用上面的 clone 步骤。）**自 2.2.1 起 wheel 不再是过期快照**——包内文件与源码逐字节一致，每次发布重新校验。仍有一处限制：`personal-understanding-install` 只注册服务、不引导档案根目录，从零开始请先运行 `python -m personal_understanding.init_archive`。需要完整 skill 大脑仍推荐上面的 clone 步骤。
 
 然后正常聊天就行："我最近……"、"记住一下……"、"为什么我总是……"——skill 的描述会在个人内容上自动触发，捕获你的原话后接管流程。也可以问"你还记得关于……的事吗"、"这个结论是哪来的"，顺着证据链走。
 

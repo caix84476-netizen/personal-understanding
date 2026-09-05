@@ -40,8 +40,13 @@ out["n_tools"] = len(tools)
 
 MSG = "今天有点丧，但想到马上能跟室友开黑CS2就好点了"
 t = tool("personal_preflight_turn", {"text": MSG, "tier": "full"})
-turn = t["content"]["turn_id"]
-out["preflight"] = {"turn": turn[:14], "signal": t["content"]["signal"]}
+# preflight nests the receipt under turn_receipt (with snapshot/followups beside it)
+receipt = t["content"].get("turn_receipt") if isinstance(t["content"], dict) else None
+receipt = receipt or (t["content"] if isinstance(t["content"], dict) else {})
+turn = receipt.get("turn_id")
+if not turn:
+    raise RuntimeError("preflight returned no turn_id: " + json.dumps(t, ensure_ascii=False)[:400])
+out["preflight"] = {"turn": turn[:14], "signal": receipt.get("signal") or t["content"].get("signal")}
 
 c = tool("personal_capture_user_turn", {"capture_id": turn, "turn_id": turn, "text": MSG})
 out["capture"] = c["content"].get("status") if isinstance(c["content"], dict) else str(c["content"])[:80]
