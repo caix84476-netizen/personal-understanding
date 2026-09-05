@@ -26,7 +26,8 @@ class RepoVersionSyncTests(unittest.TestCase):
         self.assertTrue(version_file, "VERSION file missing or empty")
         self.assertIsNotNone(m, "pyproject.toml missing project.version")
         self.assertEqual(frontmatter_version(REPO / "SKILL.md"), version_file)
-        self.assertEqual(frontmatter_version(REPO / "SKILL.zh-CN.md"), version_file)
+        # 2.6.0: SKILL.zh-CN.md removed — the skill brain is Chinese-native and
+        # the duplicated shadow drifted (453 vs 451 lines) while pinning CI releases.
         self.assertEqual(m.group(1), version_file)
         en = re.search(r"\*\*Current release: v([0-9.]+)\*\*", (REPO / "README.md").read_text(encoding="utf-8"))
         zh = re.search(r"\*\*当前版本：v([0-9.]+)\*\*", (REPO / "README.zh-CN.md").read_text(encoding="utf-8"))
