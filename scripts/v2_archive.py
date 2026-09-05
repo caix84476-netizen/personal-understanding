@@ -365,7 +365,7 @@ def infer_entity_type(record_id: str, body: str) -> str:
 
 
 def add_entity(entities: dict[str, dict[str, Any]], entity_id: str, label: str, entity_type: str, aliases: list[str]) -> None:
-    row = entities.setdefault(entity_id, {"id": entity_id, "label": label, "entity_type": entity_type, "aliases": [], "identity_status": "recorded", "record_refs": [], "fragment_refs": [], "event_refs": [], "context_refs": [], "mention_count": 0, "first_seen": None, "last_seen": None, "notes": []})
+    row = entities.setdefault(entity_id, {"id": entity_id, "label": label, "entity_type": entity_type, "aliases": [], "identity_status": "recorded", "record_refs": [], "fragment_refs": [], "event_refs": [], "context_refs": [], "related_ids": [], "mention_count": 0, "first_seen": None, "last_seen": None, "notes": []})
     for value in [label, *aliases]:
         if value and value not in row["aliases"]: row["aliases"].append(value)
 
@@ -401,6 +401,10 @@ def build_entities(rows: list[dict[str, Any]], fragments: list[dict[str, Any]], 
         add_entity(entities, record_id, label, infer_entity_type(record_id, body), aliases)
         entities[record_id]["fragment_refs"].extend(record_fragment.get(record_id, []))
         entities[record_id]["record_refs"].append(record_id)
+        # 2.6.0 挂靠边：卡片 frontmatter 的 related_ids 透传进实体行，让检索图
+        # （ppr.build_graph）能把"概念卡 → 挂靠记录"当真边——否则概念卡只有出边
+        # 没有入边，扩散进卡后走不到它挂靠的记录，联想层退化为孤岛。
+        entities[record_id]["related_ids"] = split_ids(meta.get("related_ids"))
     for entity_id, label, entity_type, aliases in SEED_ENTITIES:
         add_entity(entities, entity_id, label, entity_type, aliases)
         entities[entity_id]["identity_status"] = "recorded_from_summary"

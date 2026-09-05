@@ -37,6 +37,10 @@ def build_graph(events: list[dict], entities: list[dict], knowledge: list[dict],
             continue
         for ref in (row.get("record_refs") or []) + (row.get("event_refs") or []) + (row.get("context_refs") or []):
             _bump(adj, eid, ref)
+        for ref in row.get("related_ids") or []:
+            # card 挂靠边（2.6.0）：概念卡 frontmatter 声明的挂靠记录是真语义边，
+            # 不是共现——没有它，概念卡是扩散进得去、走不出来的孤岛。
+            _bump(adj, eid, ref)
     for row in events:
         rid = row.get("id") or row.get("record_id")
         if not rid:
@@ -44,7 +48,7 @@ def build_graph(events: list[dict], entities: list[dict], knowledge: list[dict],
         for ref in row.get("entity_refs") or []:
             _bump(adj, rid, ref)
         rels = row.get("relation_refs") or {}
-        for kind in ("related_ids", "supersedes", "supports"):
+        for kind in ("related_ids", "supersedes", "supports", "contradicts"):
             for ref in rels.get(kind) or []:
                 _bump(adj, rid, ref)
     for row in knowledge:
@@ -54,7 +58,7 @@ def build_graph(events: list[dict], entities: list[dict], knowledge: list[dict],
         for ref in row.get("entity_refs") or []:
             _bump(adj, rid, ref)
         rels = row.get("relation_refs") or {}
-        for kind in ("related_ids", "supersedes", "supports"):
+        for kind in ("related_ids", "supersedes", "supports", "contradicts"):
             for ref in rels.get(kind) or []:
                 _bump(adj, rid, ref)
     for row in facets or []:
@@ -161,8 +165,15 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
         })
 
     # Tier 1: seed-entity projections — the seed's own strongest records.
+    # 同分 tiebreak 用卡片挂靠声明序（related_ids 顺序=写卡时的语义优先序），
+    # 不用 id 字母序：字母序系统性偏向 event.*，会把卡片置顶的规则/边界记录
+    # （pref.*）挤出投影名额——实测"推荐游戏"场景晕3D硬规则因此不可达。
+    entity_row_by_id = {row.get("id"): row for row in entity_rows or []}
     for seed in sorted(seed_set, key=lambda s: -rank.get(s, 0.0)):
-        for rid, row, kind in records_of(seed)[:records_per_seed]:
+        declared = {rid: i for i, rid in enumerate((entity_row_by_id.get(seed) or {}).get("related_ids") or [])}
+        projected = sorted(records_of(seed),
+                           key=lambda item: (-(item[1].get("salience") or 0), declared.get(item[0], 99), item[0]))
+        for rid, row, kind in projected[:records_per_seed]:
             push(rid, row, kind, f"seed:{seed}", rank.get(seed, 0.0))
     # Tier 2: spread neighbours the query did not name, hubs capped out.
     neighbour_nodes = sorted(
