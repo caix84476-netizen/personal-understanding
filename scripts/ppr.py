@@ -147,7 +147,7 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
 
     query_hit_terms = {t.casefold() for t in (query_terms or []) if len(t) >= 2}
 
-    def records_of(node: str) -> list[tuple[str, dict, str]]:
+    def records_of(node: str, taken: set[str] | None = None) -> list[tuple[str, dict, str]]:
         seen: set[str] = set()
         rows: list[tuple[int, str, dict, str]] = []
         for table, kind in ((events_by_ref, "event"), (knowledge_by_ref, "knowledge")):
@@ -160,6 +160,11 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
                 # 词面通道仍可命中它们；这里只让联想候选保持具体。
                 if len(row.get("entity_refs") or []) > 10:
                     continue
+                # 2.6.1 §4b: `taken` (already-used record ids) is skipped BEFORE the
+                # per-seed slice, so a record pushed by an earlier seed — or excluded
+                # as lexically supported — cannot spend this seed's projection budget.
+                if taken and rid in taken:
+                    continue
                 seen.add(rid)
                 rows.append((-(row.get("salience") or 0), rid, row, kind))
         # salience-first, then query-relevance: a seed entity's strongest facts must
@@ -170,10 +175,17 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
             _, rid, row, kind = item
             text = f"{row.get('title','')} {row.get('summary','')}".casefold()
             return sum(1 for term in query_hit_terms if term in text)
+        def date_neg(item):
+            # newest-first among equals (2.6.1 §4b, h16: lawsuit-house 2026-09-03
+            # lost its father slot to a same-salience same-relevance 2026-08-09
+            # record on raw ID order; "我爸又来电话" asks for the freshest fact).
+            # Negated YYYYMMDD int; missing dates map to 0 and sink last.
+            ds = str(item[2].get("date_start") or "")[:10].replace("-", "")
+            return -int(ds) if len(ds) == 8 and ds.isdigit() else 0
         declared_rank = {rid: i for i, rid in enumerate((entity_row_by_id.get(node) or {}).get("related_ids") or [])}
         rows.sort(key=lambda item: (
             0 if item[1] in declared_rank else 1,   # 声明挂靠无条件优先于"碰巧提及"
-            item[0], -relevance(item), declared_rank.get(item[1], 99), item[1]))
+            item[0], -relevance(item), date_neg(item), declared_rank.get(item[1], 99), item[1]))
         return [(rid, row, kind) for _, rid, row, kind in rows]
 
     mention = {row.get("id"): (row.get("mention_count") or 0) for row in entity_rows or []}
@@ -193,15 +205,13 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
         })
 
     # Tier 1: seed-entity projections — the seed's own strongest records.
-    # 同分 tiebreak 用卡片挂靠声明序（related_ids 顺序=写卡时的语义优先序），
-    # 不用 id 字母序：字母序系统性偏向 event.*，会把卡片置顶的规则/边界记录
-    # （pref.*）挤出投影名额——实测"推荐游戏"场景晕3D硬规则因此不可达。
+    # 2.6.1 §4b: ordering (declared > salience > relevance, see records_of) lives in
+    # records_of alone; the old outer re-sort by (salience, declared, id) silently
+    # discarded the query-relevance tiebreak main had just added inside records_of.
+    # taken=used drops records an earlier seed already projected before the slice.
     entity_row_by_id = {row.get("id"): row for row in entity_rows or []}
     for seed in sorted(seed_set, key=lambda s: -rank.get(s, 0.0)):
-        declared = {rid: i for i, rid in enumerate((entity_row_by_id.get(seed) or {}).get("related_ids") or [])}
-        projected = sorted(records_of(seed),
-                           key=lambda item: (-(item[1].get("salience") or 0), declared.get(item[0], 99), item[0]))
-        for rid, row, kind in projected[:records_per_seed]:
+        for rid, row, kind in records_of(seed, taken=used)[:records_per_seed]:
             push(rid, row, kind, f"seed:{seed}", rank.get(seed, 0.0))
     # Tier 2: spread neighbours the query did not name, hubs capped out.
     # SYNAPSE (ACL 2026) gates propagation with a sigmoid activation

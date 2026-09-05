@@ -163,8 +163,19 @@ def main() -> int:
     # qualification on their own — so zero-overlap recall ("打击感烂" → 巫师3手感记录)
     # becomes reachable without polluting exact retrieval.
     assoc_adj = ppr.build_graph(events, entities, knowledge, facets)
-    assoc_exclude = {row.get("record_id") for row in selected_events if row.get("record_id")}
-    assoc_exclude |= {row.get("record_id") for row in selected_knowledge if row.get("record_id")}
+    # 2.6.1 §4b: exclude only records with real lexical support (content-term hit or
+    # explicit request). A record pulled into the timeline by entity feedback alone
+    # (我爸 → father → 诉讼房事件, zero query-term overlap) is exactly the associative
+    # channel's job — it must not self-suppress by already sitting in selected_events.
+    # Old code excluded every selected row, stranding such records at the timeline
+    # tail (h16: lawsuit-house ranked 12, labeled graph path nowhere).
+    def _lexically_supported(row: dict) -> bool:
+        rid = row.get("record_id") or row.get("id")
+        return content_hit(row) or rid in explicit_events or row.get("id") in explicit_events
+    assoc_exclude = {row.get("record_id") for row in selected_events
+                     if row.get("record_id") and _lexically_supported(row)}
+    assoc_exclude |= {row.get("record_id") for row in selected_knowledge
+                      if row.get("record_id") and _lexically_supported(row)}
     seed_weight_map = {row.get("id"): entity_scores.get(row.get("id"), 0.0) for row in entities if row.get("id") in entity_content_ids}
     association_rows = ppr.associations(assoc_adj, sorted(entity_content_ids), events, knowledge,
                                         exclude_record_ids=assoc_exclude, max_results=6,
