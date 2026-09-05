@@ -9,7 +9,7 @@
 - **概念卡层（实体 55→63）**：PPR 需要抽象层节点才能产生"精神内核"联想——第一版无概念卡的实测是共现随机游走（"打击感"查询联想出足球装备边界）。新增 8 张概念卡（操作手感/叙事体验/品味锚点/金钱自主/消费纪律/家庭边界/考公路径/身体限制）+ 《百年孤独》正式实体卡；aliases 覆盖口语入口词（"书荒""晕3D""考公""史低""打击感"）。实测："书荒了，整本来嚼嚼"——此前三通道全灭——现经 concept.reading-taste 带出阅读史与开放清单。"打击感跟纸糊的一样"→ witcher3-feel 记录 via concept.gameplay-feel。
 - **足迹轮只读降级（MCP `maintenance` 参数）**：实测发现 fail-closed 链（足迹消息判 non-personal → capture 拒写 → retrieve 拒读）把攻略/书荒类轮次彻底锁在档案之外，连读都不行。`personal_retrieve`/`personal_catalog` 现接受 `maintenance: true`（等价 CLI `--maintenance`，trace 审计）做只读降级；写入闸门分毫未动，SKILL 指引模型随后仍按足迹纪律 tier=full 重声明补 capture。
 - **管线时间线（scripts/pipeline_view.py）**：一轮对话的一生——receipt 判档理由 → capture 哈希 → 派生闭环 → 检索轨迹（query/scoring/选中/联想/停用）一页只读回放（`--turn-id X` / `--latest N`，HTML 到 dashboard/）。可视化第一步，同时是验收工具：足迹纪律、闭环完整性、检索捞偏都能在此回放。
-- 测试 173→177 全绿（新增 OOV 降权契约、混合专名存活、tools/list 健康检查连带修复 MCP schema 的 Python `False` 字面量笔误）；`retrieval_version` 升为 2.6.0。诚实边界不变：probe 契约输入仍是足迹关键词；associations 是候选池不是排序结果，引用前模型必须自行判断联想是否成立。
+- 测试 171→173 全绿（新增 OOV 降权契约、混合专名存活、tools/list 健康检查连带修复 MCP schema 的 Python `False` 字面量笔误）；`retrieval_version` 升为 2.6.0。诚实边界不变：probe 契约输入仍是足迹关键词；associations 是候选池不是排序结果，引用前模型必须自行判断联想是否成立。
 
 
 ## 2.5.1 — 2026-09-05 — 门面卫生补丁（无检索/写入行为变更）
