@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.1 — 2026-09-05 — 门面卫生补丁（无检索/写入行为变更）
+
+- README 双语：包文件计数彻底解钉（2.5.0 时英文钉 38、中文漏改还挂着过时的 37），统一为“每次发布逐字节校验”的版本无关表述。
+- scripts/hot_mirror.py：移除三处 C:\Users\Administrator 机器硬编码（随公开 wheel 分发），改为 home 派生默认值 + PU_SKILLS_DIR / PU_HOT_MIRROR_DIR / PU_HOT_MIRROR_LOG 环境变量覆盖；本机行为不变。
+- mcp_test.py：修复对现行 preflight 返回结构（turn_receipt 嵌套）的解析——原驱动按顶层 turn_id 取值，第 43 行 KeyError，公开仓库里的验收驱动已与被测 schema 脱节。
+- peek.py：与验收工作区副本同步（自动注入 --maintenance），评分不再依赖当轮 capture。
+- 测试 171 全绿；wheel 与源码逐字节一致性在构建时复验。
+
+
 ## 2.5.0 — 2026-09-05 — audit-repair release: retrieval honesty, write integrity, ops hardening
 
 承接 2.4.1 质量审计交接文档的全量修复轮：交接文档列出的问题全部修复，另经交叉审计新挖并修复约 10 项（下文标"新发现"）。

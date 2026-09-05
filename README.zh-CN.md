@@ -160,7 +160,7 @@ python scripts/open_dashboard.py                # Windows：双击 open-dashboar
 
 ## 状态
 
-- **当前版本：v2.5.0**——两档调用（full/skip，活动足迹轮次并入完整档并受足迹纪律约束）；schema 稳定（`memory/v2/` v2.0.0），持续维护。[PyPI](https://pypi.org/project/personal-understanding/) 同步发布。
+- **当前版本：v2.5.1**——两档调用（full/skip，活动足迹轮次并入完整档并受足迹纪律约束）；schema 稳定（`memory/v2/` v2.0.0），持续维护。[PyPI](https://pypi.org/project/personal-understanding/) 同步发布。
 - 兼容任何支持 MCP 的客户端；skill 本身**不限语言**（默认英文，跟随你的语言）。
 - 路线图：面板可编辑化、更精细的冷回溯排序、可选的静态加密归档。
 
