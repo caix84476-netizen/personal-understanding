@@ -80,8 +80,37 @@ class TermWeightTests(unittest.TestCase):
         self.assertNotIn("怎么", content_terms(["只狼", "怎么"], set()))
         self.assertIn("怎么", STOP_TERMS)
         docs = ["怎么 这样"] * 5 + ["只狼 弦一郎"] * 95  # 怎么 rarer than a real term
-        weights = term_weights(["怎么", "弦一郎"], docs)
+        # 2.6.0 lexicon demotion reads the real archive lexicon; blank it out so
+        # this unit test measures the pure corpus statistics it was written for.
+        from unittest import mock
+        with mock.patch("lexicon.known", return_value=False):
+            weights = term_weights(["怎么", "弦一郎"], docs)
+        # both OOV under the blanked lexicon: STOP ×0.15×0.4 must stay below the
+        # multi-char bonus ×1.3×0.4 — closed-class words never anchor ranking.
         self.assertLess(weights["怎么"], weights["弦一郎"])
+
+    def test_lexicon_oov_slices_are_demoted_but_keep_recall(self):
+        # 2.6.0: cross-word accident slices (郎我) are OOV everywhere and must not
+        # out-anchor a dictionary-known decisive term, while still carrying weight
+        # (recall is never deleted; a sole hit still wins a relative ranking).
+        from unittest import mock
+        # same document frequency for the OOV slice and the known term, so the
+        # assertion isolates the ×0.4 demotion instead of raw IDF differences.
+        docs = ["郎我卡了 打法 弦一郎"] * 10 + ["别的 东西"] * 90
+        with mock.patch("lexicon.known", side_effect=lambda t: t == "打法"):
+            weights = term_weights(["郎我卡了", "弦一郎", "打法"], docs)
+        self.assertLess(weights["郎我卡了"], weights["打法"], "equal-df OOV slice must weigh below a dictionary term")
+        self.assertLess(weights["弦一郎"], weights["打法"])
+        self.assertGreater(weights["郎我卡了"], 0, "OOV demotion keeps recall (never zero)")
+
+    def test_mixed_proper_noun_terms_survive_tokenization(self):
+        # 2.6.0: CJK/Latin boundary must not split the sharpest anchor (巫师3, 晕3D).
+        terms = weighted_query_terms("巫师3 骑马 手感")
+        self.assertIn("巫师3", terms)
+        terms2 = weighted_query_terms("晕3D 艾迪芬奇")
+        self.assertIn("晕3d", terms2)
+        # and the stray single char must not qualify content on its own
+        self.assertNotIn("3", content_terms(terms, set()))
 
 
 class DeepSeedPriorityTests(unittest.TestCase):

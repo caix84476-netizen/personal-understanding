@@ -1,6 +1,6 @@
 ---
 name: personal-understanding
-version: 2.5.1
+version: 2.6.0
 description: 两档调用。①完整档：当用户谈及自己的经历、状态、感受、家人朋友、学校、决定、长期偏好，或要求记住、纠正关于他本人的信息，或问"我为什么会这样"，包括抒发、闲聊和活动足迹类（游戏攻略、宿舍安置、在读在看）轮次——先以不可变原话保存，再沿"时间主干 survey → 实体/情境 probe → 原话 deep"渐进检索；纯足迹类轮次遵守"足迹纪律"（恰好一条微型记录）。②跳过档：纯技术、吃什么、一次性购物决策等零增值轮次完全不碰档案。默认用中文工作。
 ---
 
@@ -279,7 +279,7 @@ receipt 是可审计的事实，不是让模型参考一下的提示：`requires
 
 ### 读取入口与 MCP
 
-优先使用 MCP 工具（`personal_catalog`、`personal_retrieve`、`personal_session_check` 等）读写；它们带读取前捕获校验。若当前会话工具列表里没有 `personal_*` 工具，说明本客户端尚未注册本地 MCP 服务：运行 `python scripts/install_mcp.py --auto`（幂等，可重复执行）完成注册后提示用户重启会话；注册前仍可用 CLI 脚本完成同样的工作——但 CLI 读取同样遵守"先捕获再读"（2.5.0 §6.5：`retrieve_v2.py`/`catalog_context.py` 需 `--capture-id`，与 MCP 一致），无对话轮次的维护/测试/审计读取显式声明 `--maintenance`。注意：如果本机存在多份 skill 树（备份、沙盒、粘贴副本），从副本运行 `--auto` 时若旧注册树仍在磁盘会被 §6.6 防劫持护栏拦下并拒绝改注册，确认要切换须显式 `--force`（这防止把用户真实注册静默重指向测试树）。
+优先使用 MCP 工具（`personal_catalog`、`personal_retrieve`、`personal_session_check` 等）读写；它们带读取前捕获校验。**足迹/攻略类消息被 capture 闸门拦下时的只读降级（2.6.0）**：内容分类器把"只狼怎么打""书荒求推荐"这类足迹消息判为 non-personal 时，写入照旧被拦，但可以用 `personal_retrieve` / `personal_catalog` 的 `maintenance: true` 做只读读取（有 trace 审计；等价 CLI `--maintenance`），随后模型仍应按足迹纪律在同一 turn 上用 `tier=full` 重声明补 capture——只读通道解决的是"读不到档案"，不是"免捕获"。若当前会话工具列表里没有 `personal_*` 工具，说明本客户端尚未注册本地 MCP 服务：运行 `python scripts/install_mcp.py --auto`（幂等，可重复执行）完成注册后提示用户重启会话；注册前仍可用 CLI 脚本完成同样的工作——但 CLI 读取同样遵守"先捕获再读"（2.5.0 §6.5：`retrieve_v2.py`/`catalog_context.py` 需 `--capture-id`，与 MCP 一致），无对话轮次的维护/测试/审计读取显式声明 `--maintenance`。注意：如果本机存在多份 skill 树（备份、沙盒、粘贴副本），从副本运行 `--auto` 时若旧注册树仍在磁盘会被 §6.6 防劫持护栏拦下并拒绝改注册，确认要切换须显式 `--force`（这防止把用户真实注册静默重指向测试树）。
 
 ## 检索流程：不是把所有东西读完
 
@@ -321,7 +321,16 @@ survey 是紧凑路由地图，不含旧记录全量列表；需要按领域展�
 
 这些扩展只读取必要范围，同时保证细枝末节有卡片可达，减少关键小人物漏召回。probe 输出的每条时间条目带 `evidence_fidelity` 保真计数（逐字/摘要债务各占多少）；用摘要债务支撑的说法要向用户说明"这一段来自旧摘要，不是原话"。每次检索的决策轨迹会追加到 `memory/v2/traces/`，漏召回和误归属时用它回放检索过程。
 
-probe 与 routing 共用同一套加权排序（2.4.1 起，2.5.0 起为 weighted-idf-4-anchor）：IDF 稀有词加权（"只狼""猫学派"这类短专有名词权重高，烂大街单字权重接近零）+ 长度归一（超长记录不再靠字数霸榜）+ 实体别名路由（命中实体的时间条目获得反哺加权，如"哥哥 家里"→哥哥冲突）+ 单字实体别名豁免（"妈""她"这类档案别名不按噪音降权，口语查询可直接触达家族簇）+ 内容词入选门槛（只被非别名单字偶然命中的记录不占检索名额，杜绝"防/钱/状态"式捞偏）+ 锚定比值降权（记录得分乘以"它命中的最强词重 ÷ 查询最强词重"：只靠大路词上榜的长记录被按比例压下，命中查询稀有决定词的记录不受影响；查询本身没有稀有词时退化为原行为）。因此短词游戏名等查询的漏召回已修复，定向查重直接按足迹关键词 probe 即可；routing 仍是按领域浏览的全量地图，供查不到关键词时兜底。诚实边界：**probe 的契约输入是足迹关键词**——把整句原话直接当 query 时，长句切出的意外 n-gram（"郎我""卡了"这类跨词切片）在小语料上会拿到虚高 IDF，把无关长记录推进前排（18 轮回测实测，锚定降权可缓解不可根除）；模型侧先提关键词再 probe，routing 才吃整句。
+probe 与 routing 共用同一套加权排序（2.4.1 起，2.5.0 起为 weighted-idf-4-anchor，2.6.0 起加权词元经过档案词表净化）：IDF 稀有词加权（"只狼""猫学派"这类短专有名词权重高，烂大街单字权重接近零）+ 长度归一（超长记录不再靠字数霸榜）+ 实体别名路由（命中实体的时间条目获得反哺加权，如"哥哥 家里"→哥哥冲突）+ 单字实体别名豁免（"妈""她"这类档案别名不按噪音降权，口语查询可直接触达家族簇）+ 内容词入选门槛（只被非别名单字偶然命中的记录不占检索名额，杜绝"防/钱/状态"式捞偏）+ 锚定比值降权（记录得分乘以"它命中的最强词重 ÷ 查询最强词重"：只靠大路词上榜的长记录被按比例压下，命中查询稀有决定词的记录不受影响；查询本身没有稀有词时退化为原行为）+ 词元净化（2.6.0：查询切片先过 `resources/lexicon` 词典——vendored jieba 词典 + 档案自训练词表 `memory/v2/archive-lexicon.json`，档案里 DF≥2 的字段自动成词，冷门专名靠档案自训练；词典外切片权重 ×0.4 封顶——保留召回但不再当锚定，跨词假切片如"郎我"不再霸榜；"巫师3""晕3D"这类中英混写专名自动粘连成整词；ASCII 单字符（如"巫师3"拆出的"3"）不再具备内容词资格）。因此短词游戏名等查询的漏召回已修复，定向查重直接按足迹关键词 probe 即可；routing 仍是按领域浏览的全量地图，供查不到关键词时兜底。诚实边界：**probe 的契约输入是足迹关键词**——把整句原话直接当 query 时，锚定降权可缓解不可根除；模型侧先提关键词再 probe，routing 才吃整句。
+
+### associations：联想检索通道（2.6.0）
+
+probe 输出里有一个独立的 `associations` 段：个性化 PageRank 在档案图上扩散（种子 = 本轮查询实际命中的实体与概念卡），带出**词面零重叠**的候选——例如用户抱怨"打击感烂"时应想到"巫师3 骑马手感"记录（两个词面无交集，靠概念卡 `entity.concept.gameplay-feel` 中转）。使用契约：
+
+1. **它是候选池，不是排序结果**：每条带 `via_entity` 图路径与 `spread_score`，模型必须自己判断联想是否成立再引用；经枢纽封顶（mention_count>30 的泛枢纽不做中转）与去重（不与 timeline/knowledge 重复）。
+2. **绝不混入 timeline**：词面通道管精确回忆，联想通道管发散；两者分开呈现，审计时 via 路径可回放。
+3. **概念卡是它的地基**：`entity.concept.*` 卡（操作手感/叙事体验/品味锚点/金钱自主/消费纪律/家庭边界/考公路径/身体限制等）的 aliases 覆盖口语入口词（"书荒""晕3D""考公""史低"）；新概念出现时按实体卡流程开卡挂链，不要让联想层退化为共现随机游走。
+4. 宽泛兴趣问题（"书荒了""最近好无聊"）若实体零命中，associations 会经由概念卡 aliases 自动获得种子；仍无种子时按"冷回溯"阶梯与实体目录 routing 兜底，**禁止宣称"档案里没有"**。
 
 ### deep：回到原话核验
 
@@ -417,7 +426,8 @@ probe 与 routing 共用同一套加权排序（2.4.1 起，2.5.0 起为 weighte
 - `scripts/session_check.py --turn-id <turn-id>`：回答或声称"档案已更新"前的硬闸门（receipt + 结构 + 派生闭环 + v2 完整性，失败退出码非 0）；
 - `scripts/salience_review.py`：季度记忆权重复盘，把长期未确认的导入权重降为提及级（见 `references/review-and-feedback-loops.md`）；
 - `scripts/record_feedback.py`：记录依赖个人记忆的回答效果（helpful/missed/corrected），`review_v2 --deep` 汇总常被纠正的记忆（见 `references/review-and-feedback-loops.md`）；
-- `scripts/rebuild_views.py`：重建旧版兼容视图和 v2 派生视图；
+- `scripts/rebuild_views.py`：重建旧版兼容视图、v2 派生视图与档案自训练词表（`memory/v2/archive-lexicon.json`，2.6.0 起每次重建自动刷新，供检索词元净化使用）；
+- `scripts/pipeline_view.py`：一轮对话的管线时间线（receipt → capture → 派生闭环 → 检索 trace 的一页只读回放，2.6.0；`--turn-id X` 或 `--latest N`，HTML 输出到 dashboard/，同时是审计与验收工具）；
 - `scripts/backup_archive.py`：生成带 SHA256 清单的本地备份，并自动镜像到 `memory/backup-config.json` 指定的第二位置（见 `references/maintenance-and-durability.md`；重要更新后、迁移前、至少每周一次）；
 - `scripts/init_archive.py`：全新安装时初始化档案骨架（目录 + 通用领域分支），首次使用前运行一次（幂等）；
 - `scripts/install_mcp.py`：检测本机各 AI 客户端并注册本地 MCP 服务（幂等；换机器、粘贴 skill 到新客户端后运行一次即可；若检测到多份 skill 树并存，改注册受 §6.6 防劫持护栏约束，须 `--force` 显式确认）；

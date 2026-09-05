@@ -8,6 +8,7 @@ from datetime import date, datetime
 from collections import defaultdict
 from catalog_utils import ROOT, anchor_ratio, content_terms, select_hypotheses, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
 from v2_archive import V2_ROOT, followup_is_due, load_v2
+import ppr
 
 
 def haystack(row: dict) -> str:
@@ -156,6 +157,17 @@ def main() -> int:
     selected_knowledge += [row for value, row in ranked_knowledge if row not in selected_knowledge and ((value > 0 and content_hit(row)) or not terms)][:18]
     for row in selected_knowledge:
         entity_ids.update(row.get("entity_refs", []))
+    # 2.6.0 associative side channel (SKILL §检索流程): spreading activation over the
+    # archive graph, seeded by the entities the query actually named. Candidates land
+    # in a separate `associations` section — never in the lexical timeline, never a
+    # qualification on their own — so zero-overlap recall ("打击感烂" → 巫师3手感记录)
+    # becomes reachable without polluting exact retrieval.
+    assoc_adj = ppr.build_graph(events, entities, knowledge, facets)
+    assoc_exclude = {row.get("record_id") for row in selected_events if row.get("record_id")}
+    assoc_exclude |= {row.get("record_id") for row in selected_knowledge if row.get("record_id")}
+    association_rows = ppr.associations(assoc_adj, sorted(entity_content_ids), events, knowledge,
+                                        exclude_record_ids=assoc_exclude, max_results=6,
+                                        entity_rows=entities)
     selected_facets = [row for row in facets if set(row.get("entry_refs", [])) & event_ids or row.get("entity_id") in entity_ids or set(row.get("entity_ids", [])) & entity_ids]
     selected_facets = selected_facets[:40]
     selected_fragment_ids = set()
@@ -194,11 +206,11 @@ def main() -> int:
     # the catalog stubs. Selection lives in catalog_utils (shared with the survey).
     all_hypotheses = data.get("hypotheses", [])
     carried_hypotheses = select_hypotheses(all_hypotheses, terms, content, weights)
-    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-4-anchor", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "hypotheses": {"carried": len(carried_hypotheses), "omitted": max(0, len(all_hypotheses) - len(carried_hypotheses)), "policy": "content-term gate — 普通事实问题不自动加载因果假设"}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
+    trace = {"activation": "retrieve", "level": args.level, "query": args.query, "window": args.window or None, "scoring": "weighted-idf-4-anchor+ppr", "survey": {"events": len(events), "entities": len(entities), "facets": len(facets)}, "selected": {"event_ids": [row.get("id") for row in selected_events], "entity_ids": [row.get("id") for row in selected_entities], "knowledge_ids": [row.get("id") for row in selected_knowledge], "facet_ids": [row.get("id") for row in selected_facets]}, "associations": {"seeds": sorted(entity_content_ids), "returned": len(association_rows), "via": [row.get("via_entity") for row in association_rows]}, "stopped": {"event_count": max(0, len(events) - len(selected_events)), "entity_count": max(0, len(entities) - len(selected_entities)), "reason": "Budget and relevance boundaries; the model must explicitly expand seeds when more is needed."}, "hypotheses": {"carried": len(carried_hypotheses), "omitted": max(0, len(all_hypotheses) - len(carried_hypotheses)), "policy": "content-term gate — 普通事实问题不自动加载因果假设"}, "fidelity": "probe does not read verbatim; deep reads only fragments linked to selected events/entities and preserves the summary_only marker."}
     trace_path = None
     if not args.no_trace:
         trace_path = save_trace(trace, capture_id=args.capture_id)
-    result = {"retrieval_version": "2.0.0", "read": {"level": args.level, "query": args.query}, "timeline": timeline_rows, "entities": [compact_entity(row) for row in selected_entities], "knowledge": [row for row in selected_knowledge], "facets": [compact_facet(row) for row in selected_facets], "current_state": data.get("current_state", {}), "followups": {"due": due}, "hypotheses": [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in carried_hypotheses], "fragments": selected_fragments, "trace": trace, "trace_path": trace_path}
+    result = {"retrieval_version": "2.6.0", "read": {"level": args.level, "query": args.query}, "timeline": timeline_rows, "entities": [compact_entity(row) for row in selected_entities], "knowledge": [row for row in selected_knowledge], "associations": association_rows, "facets": [compact_facet(row) for row in selected_facets], "current_state": data.get("current_state", {}), "followups": {"due": due}, "hypotheses": [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in carried_hypotheses], "fragments": selected_fragments, "trace": trace, "trace_path": trace_path}
     if args.format == "markdown":
         print("# v2 Personal Understanding Read")
         print(f"Read level: {args.level}; query: {args.query or 'global spine'}\n")

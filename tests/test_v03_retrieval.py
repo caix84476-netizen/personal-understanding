@@ -41,7 +41,7 @@ class RetrievalV2Tests(unittest.TestCase):
         result = self.run_script("retrieve_v2.py", "--query", "高中 足球", "--level", "probe", "--no-trace")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
-        self.assertEqual(data["retrieval_version"], "2.0.0")
+        self.assertEqual(data["retrieval_version"], "2.6.0")  # 2.6.0 lexicon hygiene + associations
         self.assertEqual(data["read"]["level"], "probe")
         self.assertFalse(data["fragments"])
         self.assertTrue(data["timeline"] or data["entities"] or data["facets"])

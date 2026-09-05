@@ -54,8 +54,8 @@ def rebuild_and_validate() -> tuple[int, str]:
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {"name": "personal_preflight_turn", "description": "当前用户消息的强制内容预检。它持久化 turn receipt；个人经历、感受、关系、偏好、决定即使请求形式是润色/总结/看图，也会要求 capture。两档调用（2.4.0 起）：内容含个人材料或活动足迹类轮次（如'正在玩某游戏'）走完整档（tier=full/auto），足迹轮次受足迹纪律（写入前定向查重、恰好一条微型记录、零新增可 no-derivation 收场）；纯技术/吃喝/购物等明显无关或零增值轮次不调用本工具（跳过档）。tier=light 已废弃，传入按 full 处理。", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}, "turn_id": {"type": "string"}, "conversation_id": {"type": "string"}, "tier": {"type": "string", "enum": ["auto", "full", "light", "skip"], "description": "模型显式声明档位；auto=纯内容分类，skip=强制跳过，full=完整档兜底（含活动足迹轮次）；light 已废弃按 full 处理"}}, "required": ["text"], "additionalProperties": False}},
-        {"name": "personal_catalog", "description": "读取 v2 全局勘察。必须先完成当前轮次 turn preflight capture，并提供 capture_id；否则拒绝读取。", "inputSchema": {"type": "object", "properties": {"view": {"type": "string", "enum": ["survey", "routing", "full"], "default": "survey"}, "query": {"type": "string"}, "capture_id": {"type": "string"}}, "required": ["capture_id"], "additionalProperties": False}},
-        {"name": "personal_retrieve", "description": "按 v2 事件、实体和情境卡读取 probe/deep。必须先完成当前轮次 turn preflight capture，并提供 capture_id；否则拒绝读取。", "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "string"}}, "level": {"type": "string", "enum": ["probe", "deep"], "default": "probe"}, "query": {"type": "string"}, "capture_id": {"type": "string"}}, "required": ["capture_id"], "additionalProperties": False}},
+        {"name": "personal_catalog", "description": "读取 v2 全局勘察。常规交互读取必须先完成当前轮次 turn preflight capture 并提供 capture_id；足迹/攻略类消息被 capture 闸门拦下时，可用 maintenance=true 做只读降级读取（有 trace 审计，不写档案），随后按足迹纪律用 tier=full 重声明补 capture。", "inputSchema": {"type": "object", "properties": {"view": {"type": "string", "enum": ["survey", "routing", "full"], "default": "survey"}, "query": {"type": "string"}, "capture_id": {"type": "string"}, "maintenance": {"type": "boolean", "default": False, "description": "显式声明非交互只读（等价 CLI --maintenance）；不能代替 capture 完成写入闭环"}}, "required": [], "additionalProperties": False}},
+        {"name": "personal_retrieve", "description": "按 v2 事件、实体和情境卡读取 probe/deep。必须先完成当前轮次 turn preflight capture，并提供 capture_id；否则拒绝读取。", "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "string"}}, "level": {"type": "string", "enum": ["probe", "deep"], "default": "probe"}, "query": {"type": "string"}, "capture_id": {"type": "string"}, "maintenance": {"type": "boolean", "default": False, "description": "显式声明非交互只读（等价 CLI --maintenance）；足迹/攻略类消息 capture 被拦时的只读降级通道，有 trace 审计"}}, "required": [], "additionalProperties": False}},
         {"name": "personal_capture_user_turn", "description": "绑定已判定为个人材料的 turn receipt，原样保存完整用户消息。没有 preflight 或 preflight 判为非个人时拒绝写入；捕获后仍必须派生并 finalize。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "turn_id": {"type": "string"}, "text": {"type": "string"}, "conversation_id": {"type": "string"}, "captured_at": {"type": "string"}, "message_kind": {"type": "string"}}, "required": ["capture_id", "turn_id", "text"], "additionalProperties": False}},
         {"name": "personal_add_record", "description": "创建派生记录。若来源是当前用户补充，必须先有 verbatim capture，并把 verbatim_refs 写入记录。活动足迹类微型记录传 tier=light（salience 0-1），完整档记录不传或传 full；记录层 tier 仅表示记录形态，不再表示调用档位。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": sorted(VALID_KINDS)}, "domain": {"type": "string"}, "summary": {"type": "string"}, "tier": {"type": "string", "enum": ["full", "light"], "description": "记录形态：light=活动足迹微型记录（salience 0-1）；缺省/full=完整档记录。仅表示形态，不再表示调用档位"}, "source_refs": {"type": "string"}, "verbatim_refs": {"type": "string"}, "capture_id": {"type": "string"}, "confidence": {"type": "string", "enum": sorted(VALID_CONFIDENCE), "default": "high"}, "sensitivity": {"type": "string", "enum": sorted(VALID_SENSITIVITY), "default": "ordinary"}, "related_ids": {"type": "string"}, "aliases": {"type": "string"}, "salience": {"type": "integer", "minimum": 0, "maximum": 3}, "phase": {"type": "string"}, "valid_from": {"type": ["string", "null"]}, "last_confirmed": {"type": ["string", "null"]}, "date_end": {"type": ["string", "null"]}, "date_precision": {"type": "string"}, "date_basis": {"type": "string"}, "entity_refs": {"type": "string"}, "record_role": {"type": "string"}}, "required": ["id", "kind", "summary"], "additionalProperties": False}},
         {"name": "personal_finalize_capture", "description": "关闭当前原话捕获的派生闭环。derived 必须已有至少一条双向链接记录；无需派生时必须写具体原因（零新增收场须写明定向查重命中的既有记录）。回答前必须调用。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "disposition": {"type": "string", "enum": ["derived", "no-derivation-needed"]}, "reason": {"type": "string"}}, "required": ["capture_id", "disposition"], "additionalProperties": False}},
@@ -102,6 +102,21 @@ def require_capture(data: dict[str, Any]) -> tuple[bool, str]:
     if capture_id not in discover_captures(ROOT):
         return False, f"拒绝读取：capture_id 不存在：{capture_id}。先保存原话或附件。"
     return True, ""
+
+
+def read_gate(data: dict[str, Any]) -> tuple[bool, str, bool]:
+    """Read-side gate shared by catalog/retrieve (2.6.0).
+
+    Normal interactive reads still demand this turn's capture. A read may pass
+    WITHOUT a capture only via the explicit maintenance declaration — the same
+    audited escape hatch as CLI --maintenance — because the fail-closed chain
+    (footprint query judged non-personal -> rejected capture -> rejected read)
+    was measured on 2026-09-05 to lock strategy/footprint turns out of *reading*
+    entirely, and a read cannot corrupt the archive. Writes keep the hard gate."""
+    if bool(data.get("maintenance")):
+        return True, "", True
+    ok, message = require_capture(data)
+    return ok, message, False
 
 
 def join_list_value(value: Any) -> str:
@@ -269,17 +284,19 @@ def handle(method: str, params: dict[str, Any]) -> Any:
                 payload["maintenance_reminders"] = maintenance_reminders()
             return text_result(json.dumps(payload, ensure_ascii=False, indent=2))
         if name == "personal_catalog":
-            ok, message = require_capture(args)
+            ok, message, maintenance = read_gate(args)
             if not ok: return text_result(message, error=True)
             view = str(args.get("view", "survey"));
             if view not in {"survey", "routing", "full"}: return text_result("view 不合法。", error=True)
             cmd = ["--view", view, "--capture-id", str(args.get("capture_id", "")).strip()];
+            if maintenance: cmd += ["--maintenance"]
             if args.get("query"): cmd += ["--query", str(args["query"])]
             code, output = run_script("catalog_context.py", cmd); return text_result(output, error=bool(code))
         if name == "personal_retrieve":
-            ok, message = require_capture(args)
+            ok, message, maintenance = read_gate(args)
             if not ok: return text_result(message, error=True)
             ids = args.get("ids") or []; query = str(args.get("query", "")); level = str(args.get("level", "probe")); cmd = ["--level", level, "--capture-id", str(args.get("capture_id", "")).strip()]
+            if maintenance: cmd += ["--maintenance"]
             if ids: cmd += ["--event-ids", ",".join(str(item) for item in ids), "--entity-ids", ",".join(str(item) for item in ids)]
             if query: cmd += ["--query", query]
             code, output = run_script("retrieve_v2.py", cmd); return text_result(output, error=bool(code))
