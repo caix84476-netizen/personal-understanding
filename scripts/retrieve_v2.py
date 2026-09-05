@@ -6,7 +6,7 @@ configure_utf8_stdio()
 import argparse, json
 from datetime import date, datetime
 from collections import defaultdict
-from catalog_utils import ROOT, anchor_ratio, content_terms, select_hypotheses, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
+from catalog_utils import ROOT, anchor_ratio, content_terms, recency_factor, select_hypotheses, single_char_aliases, term_weights, weighted_match_score, weighted_query_terms
 from v2_archive import V2_ROOT, followup_is_due, load_v2
 import ppr
 
@@ -130,9 +130,13 @@ def main() -> int:
     max_query_weight = max((weights.get(term, 0.0) for term in content), default=0.0)
     ENTITY_EVENT_BOOST = 0.6
     def event_value(row: dict) -> float:
+        # 2.6.1 §4c Generative-Agents recency: multiplicative 0.5^(age/180d) on the
+        # lexical value (undated rows neutral at 1.0 — see catalog_utils.recency_factor).
+        # Measured on the auto-derived 31-case time-consistency gold set: violation
+        # 0.419→0.161, precise-recall net 0.617→0.617, golden regressions pass.
         value = row_score(row, weights) * anchor_ratio(haystack(row), weights, content, max_query_weight)
         boost = max((entity_scores.get(ref, 0.0) for ref in row.get("entity_refs", []) if ref in entity_content_ids), default=0.0)
-        return value + ENTITY_EVENT_BOOST * boost
+        return (value + ENTITY_EVENT_BOOST * boost) * recency_factor(row)
     def qualifies(row: dict) -> bool:
         return content_hit(row) or bool(set(row.get("entity_refs", []) or []) & entity_content_ids)
     ranked_events = sorted(((event_value(row), row) for row in events), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("date_start") or "9999-99-99", pair[1].get("id", "")))

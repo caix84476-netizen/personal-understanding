@@ -178,5 +178,72 @@ class RecallRegressionTests(unittest.TestCase):
             self.assertIn(target, record_ids[:2], f"{query} lost its positive control")
 
 
+class RecencyFactorTests(unittest.TestCase):
+    """2.6.1 §4c: Generative-Agents multiplicative recency on the lexical channel.
+    Unit-level contract (runs anywhere — no archive needed)."""
+
+    def test_undated_record_is_neutral_not_ancient(self):
+        # the measured regression: treating missing dates as ancient silently
+        # buried correctly-titled records; undated must stay at full weight
+        from catalog_utils import recency_factor
+        from datetime import date
+        self.assertEqual(recency_factor({"date_start": ""}, today=date(2026, 9, 5)), 1.0)
+        self.assertEqual(recency_factor({}, today=date(2026, 9, 5)), 1.0)
+        self.assertEqual(recency_factor({"date_start": "not-a-date"}, today=date(2026, 9, 5)), 1.0)
+
+    def test_half_life_halves_the_score(self):
+        from catalog_utils import recency_factor, RECENCY_HALF_LIFE_DAYS
+        from datetime import date, timedelta
+        today = date(2026, 9, 5)
+        one_half_life = {"date_start": (today - timedelta(days=RECENCY_HALF_LIFE_DAYS)).isoformat()}
+        self.assertAlmostEqual(recency_factor(one_half_life, today=today), 0.5, places=6)
+        self.assertAlmostEqual(recency_factor({"date_start": "2026-09-05"}, today=today), 1.0)
+        two_half_lives = {"date_start": (today - timedelta(days=2 * RECENCY_HALF_LIFE_DAYS)).isoformat()}
+        self.assertAlmostEqual(recency_factor(two_half_lives, today=today), 0.25, places=6)
+
+    def test_newer_record_outranks_older_all_else_equal(self):
+        from catalog_utils import recency_factor
+        from datetime import date
+        today = date(2026, 9, 5)
+        self.assertGreater(recency_factor({"date_start": "2026-08-19"}, today=today),
+                           recency_factor({"date_start": "2026-07-15"}, today=today))
+
+    def test_future_or_past_today_no_negative_age(self):
+        from catalog_utils import recency_factor
+        from datetime import date
+        # age clamps at 0 → newest weight 1.0 even if the date is after "today"
+        self.assertLessEqual(recency_factor({"date_start": "2027-01-01"}, today=date(2026, 9, 5)), 1.0)
+
+
+@unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/)")
+class TimeConsistencyRecallTests(unittest.TestCase):
+    """The §4c gold contract on the real archive: for two records about one matter
+    spanning a month, the fresher must not be buried below the older one."""
+
+    def run_probe(self, query):
+        result = subprocess.run([sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--maintenance", "--query", query, "--level", "probe", "--format", "json", "--no-trace"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)
+
+    def test_entity_home_recent_state_outranks_old_intake(self):
+        # source.intake.2026-07-15 (old, entity home) vs home-social-pattern-20260719…:
+        # under recency the current-state records lead; the July intake drops back
+        data = self.run_probe("家庭交流现在的模式")
+        ids = [row.get("record_id") or row.get("id") for row in data["timeline"]]
+        recent = next((i for i in ids if i and ("home-social-pattern" in i or "transition-overload" in i)), None)
+        intake = next((i for i in ids if i and i == "source.intake.2026-07-15"), None)
+        if recent and intake:
+            self.assertLess(ids.index(recent), ids.index(intake))
+
+    def test_h16_lawsuit_house_reaches_lexical_top(self):
+        # the §4b+§4c combined contract: zero query-term overlap record reaches the
+        # timeline via entity boost + recency AND keeps its labeled associative path
+        data = self.run_probe("我爸又来电话说房子的事")
+        ids = [row.get("record_id") or row.get("id") for row in data["timeline"]]
+        self.assertIn("event.family.parents-lawsuit-house-rent-20260903", ids[:5])
+        assoc = [row.get("record_id") for row in data["associations"]]
+        self.assertIn("event.family.parents-lawsuit-house-rent-20260903", assoc)
+
+
 if __name__ == "__main__":
     unittest.main()

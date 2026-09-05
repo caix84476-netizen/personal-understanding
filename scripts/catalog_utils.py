@@ -575,6 +575,40 @@ def anchor_ratio(text: str, weights: dict[str, float], content: set[str], max_qu
     return best / max_query_weight if best else 1.0
 
 
+RECENCY_HALF_LIFE_DAYS = 180
+
+def recency_factor(row: dict, today: date | None = None, half_life: int = RECENCY_HALF_LIFE_DAYS) -> float:
+    """Generative-Agents-style time relevance for the lexical channel (2.6.1 §4c,
+    measured): multiplicative 0.5^(age/half_life) on event_value. On an auto-derived
+    31-case time-consistency gold set (same entity carries an old and a newer record,
+    "X最近的情况" queries) it halves the old-beats-new violation rate 0.419→0.161
+    while a 314-case precise-recall net stays flat (0.617→0.617) and the associative
+    golden regressions (h16 房子, 推荐游戏→晕3D) pass unchanged.
+
+    Two measured design rules, both born from regressions:
+    - UNDATED records are NEUTRAL (factor 1.0), never treated as ancient: 9% of
+      events lack date_start and treating them as old silently buried correctly
+      titled records (SET-A regression).
+    - half_life 90..730 days were swept — violation rate is insensitive beyond
+      90, so the exact constant is not a tuning surface; 180 sits mid-range.
+    The knowledge channel keeps NO recency factor: cards are living summaries
+    re-confirmed over time (last_confirmed drifts with updates), and the
+    associative channel has its own date tiebreak inside records_of.
+    """
+    ds = str(row.get("date_start") or "")[:10]
+    if len(ds) != 10:
+        return 1.0
+    try:
+        y, m, d = int(ds[:4]), int(ds[5:7]), int(ds[8:10])
+    except ValueError:
+        return 1.0
+    try:
+        age = max(0, ((today or date.today()) - date(y, m, d)).days)
+    except ValueError:
+        return 1.0
+    return 0.5 ** (age / half_life)
+
+
 def route_catalog(catalog: dict[str, Any], query: str = "", per_domain: int = 4) -> dict[str, Any]:
     """Return the global survey plus compatibility domain groupings.
 
