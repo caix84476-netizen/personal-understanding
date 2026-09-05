@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.6.0 — 2026-09-05 — 联想检索与档案词表：让"词面零重叠"的回忆变得可达
+
+承接 2026-09-05 深夜与用户的演进讨论（"回忆 ≠ 语义相似：反面与精神内核相似物打分为 0 就不可见"），全部改动先在沙盒实测、再落库；新增三层能力与一次闸门放宽。
+
+- **词元净化层（scripts/lexicon.py + resources/lexicon/）**：vendor jieba 词典（MIT，fxsjy/jieba，34.9 万词条）+ 档案自训练词表（`memory/v2/archive-lexicon.json`：档案文本 DF≥2 的 2-4 字字段 + 全部实体卡 label/aliases，rebuild_views 自动刷新）。三类修复均有实测根因：① ASCII 单字符（"巫师3"拆出的"3"）不再具备内容词资格——记录 id/日期里的"3"曾让驾照记录在巫师3查询拿 timeline 第 1；② 中英混写专名自动粘连成整词（"巫师3""晕3D"），CJK/ASCII 边界不再切碎最强锚定；③ 词典外切片权重 ×0.4 封顶——保留召回（唯一命中仍前排、排序是相对的）但不再当锚定词，跨词假切片（"郎我""卡了"）失去虚高 IDF。设计教训已写进代码注释与测试：第一版"直接删除 OOV 切片"立即回归 T02（"弦一郎"档案仅出现 1 次、任何 DF 门槛都救不了它），改为降权后零误杀。`known()` 的判定含档案自训练词表——档案自身就是最懂自己专名的词典（用户 5.6b 提案）。
+- **联想检索通道（scripts/ppr.py + retrieve_v2 `associations` 段）**：个性化 PageRank 在档案图上扩散（种子 = 查询命中的实体/概念卡；4 次迭代的局部扩散——收敛式 PPR 会让 ai-agi/home 这类 50-68 mention 的枢纽把"联想"变成"热度榜"；非种子邻居 mention_count≤30 封顶）。两级候选：种子实体投影（图距离 1 的自有记录，按 salience 排序——"打击感烂"经概念卡直达"巫师3 骑马手感"记录，词面零重叠）+ 图扩散邻居。输出独立 `associations` 段，每条带 `via_entity` 路径与 `spread_score`，绝不混入 timeline、绝不自行构成入选资格——词面管精确回忆、图管发散，证据链可见可审计。
+- **概念卡层（实体 55→63）**：PPR 需要抽象层节点才能产生"精神内核"联想——第一版无概念卡的实测是共现随机游走（"打击感"查询联想出足球装备边界）。新增 8 张概念卡（操作手感/叙事体验/品味锚点/金钱自主/消费纪律/家庭边界/考公路径/身体限制）+ 《百年孤独》正式实体卡；aliases 覆盖口语入口词（"书荒""晕3D""考公""史低""打击感"）。实测："书荒了，整本来嚼嚼"——此前三通道全灭——现经 concept.reading-taste 带出阅读史与开放清单。"打击感跟纸糊的一样"→ witcher3-feel 记录 via concept.gameplay-feel。
+- **足迹轮只读降级（MCP `maintenance` 参数）**：实测发现 fail-closed 链（足迹消息判 non-personal → capture 拒写 → retrieve 拒读）把攻略/书荒类轮次彻底锁在档案之外，连读都不行。`personal_retrieve`/`personal_catalog` 现接受 `maintenance: true`（等价 CLI `--maintenance`，trace 审计）做只读降级；写入闸门分毫未动，SKILL 指引模型随后仍按足迹纪律 tier=full 重声明补 capture。
+- **管线时间线（scripts/pipeline_view.py）**：一轮对话的一生——receipt 判档理由 → capture 哈希 → 派生闭环 → 检索轨迹（query/scoring/选中/联想/停用）一页只读回放（`--turn-id X` / `--latest N`，HTML 到 dashboard/）。可视化第一步，同时是验收工具：足迹纪律、闭环完整性、检索捞偏都能在此回放。
+- 测试 173→177 全绿（新增 OOV 降权契约、混合专名存活、tools/list 健康检查连带修复 MCP schema 的 Python `False` 字面量笔误）；`retrieval_version` 升为 2.6.0。诚实边界不变：probe 契约输入仍是足迹关键词；associations 是候选池不是排序结果，引用前模型必须自行判断联想是否成立。
+
+
 ## 2.5.1 — 2026-09-05 — 门面卫生补丁（无检索/写入行为变更）
 
 - README 双语：包文件计数彻底解钉（2.5.0 时英文钉 38、中文漏改还挂着过时的 37），统一为“每次发布逐字节校验”的版本无关表述。
