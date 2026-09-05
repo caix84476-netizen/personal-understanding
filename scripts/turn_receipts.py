@@ -19,7 +19,7 @@ MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天",
 # that double as tech jargon stay OUT (a missed low-signal turn is recoverable via
 # the tier=full declaration + §8.1 upgrade path; a tech turn forced into capture is
 # churn the user feels every session).
-STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦", "emo", "低落", "郁闷", "崩溃", "疲惫", "很丧", "好丧", "有点丧", "挺丧", "丧得")  # 丧 须多字形态："丧尸"是游戏名词（实测误触发足迹轮）
+STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦", "emo", "低落", "郁闷", "崩溃", "疲惫", "很丧", "好丧", "有点丧", "挺丧", "丧得", "堵得慌", "心里堵", "憋屈", "心里闷", "心累", "好累啊", "撑不住", "尴尬", "难为情", "社死", "丢人", "羞耻", "不是滋味", "诸事不顺")  # 词表法已到头的诚实边界见 SKILL 低信号节  # 低信号情感第二补充批：g03 实测"心里堵得慌"漏判后加；心累依赖 TECHNICAL 否决（写代码写得心累=技术轮）  # 丧 须多字形态："丧尸"是游戏名词（实测误触发足迹轮）
 TECHNICAL = ("python", "javascript", "typescript", "代码", "配置", "报错", "bug", "mcp", "插件", "仓库", "git", "接口", "数据库", "部署")
 
 def now_iso() -> str: return datetime.now().astimezone().isoformat(timespec="seconds")

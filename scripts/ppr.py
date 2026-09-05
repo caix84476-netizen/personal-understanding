@@ -112,7 +112,8 @@ def personalized_pagerank(adj: dict[str, set[str]], seeds: list[str], teleport: 
 def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict], knowledge: list[dict],
                  exclude_record_ids: set[str] | None = None, max_results: int = 6,
                  records_per_seed: int = 3, neighbour_mention_cap: int = 30,
-                 entity_rows: list[dict] | None = None, seed_weights: dict[str, float] | None = None) -> list[dict]:
+                 entity_rows: list[dict] | None = None, seed_weights: dict[str, float] | None = None,
+                 query_terms: list[str] | None = None) -> list[dict]:
     """Associative candidates the lexical channels missed, in two tiers.
 
     Tier 1 — seed projections: records the query-named entities already carry at
@@ -131,6 +132,7 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
         return []
     exclude = set(exclude_record_ids or set())
     rank = personalized_pagerank(adj, seeds, seed_weights=seed_weights)
+    query_terms = query_terms or []
     seed_set = set(seeds)
     events_by_ref: dict[str, list[dict]] = defaultdict(list)
     for row in events:
@@ -143,6 +145,8 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
         for ref in row.get("entity_refs") or []:
             knowledge_by_ref[ref].append(row)
 
+    query_hit_terms = {t.casefold() for t in (query_terms or []) if len(t) >= 2}
+
     def records_of(node: str) -> list[tuple[str, dict, str]]:
         seen: set[str] = set()
         rows: list[tuple[int, str, dict, str]] = []
@@ -151,11 +155,25 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
                 rid = row.get("record_id") or row.get("id")
                 if not rid or rid in seen:
                     continue
+                # 万能邻居治理（2.6.1，g05/g10/g14 实测）：一条记录挂靠 >10 个实体
+                # 意味着它"什么都沾"，在联想层是万能噪声（skill 元讨论、泛化纠正）。
+                # 词面通道仍可命中它们；这里只让联想候选保持具体。
+                if len(row.get("entity_refs") or []) > 10:
+                    continue
                 seen.add(rid)
                 rows.append((-(row.get("salience") or 0), rid, row, kind))
-        # salience-first: a seed entity's strongest facts must not be crowded out
-        # of the projection budget by incidental event mentions
-        rows.sort(key=lambda item: (item[0], item[1]))
+        # salience-first, then query-relevance: a seed entity's strongest facts must
+        # not be crowded out of the projection budget, but among equal salience the
+        # record whose text actually shares query words outranks a merely-adjacent
+        # one (2.6.1, h05 实测：相邻但内容无关的记录曾占据联想名额).
+        def relevance(item):
+            _, rid, row, kind = item
+            text = f"{row.get('title','')} {row.get('summary','')}".casefold()
+            return sum(1 for term in query_hit_terms if term in text)
+        declared_rank = {rid: i for i, rid in enumerate((entity_row_by_id.get(node) or {}).get("related_ids") or [])}
+        rows.sort(key=lambda item: (
+            0 if item[1] in declared_rank else 1,   # 声明挂靠无条件优先于"碰巧提及"
+            item[0], -relevance(item), declared_rank.get(item[1], 99), item[1]))
         return [(rid, row, kind) for _, rid, row, kind in rows]
 
     mention = {row.get("id"): (row.get("mention_count") or 0) for row in entity_rows or []}

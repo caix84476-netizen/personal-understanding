@@ -1,0 +1,264 @@
+{
+ "g01": {
+  "q": "艾尔登法环好不好玩，值得入手吗",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "decision.education.admission-result-20260721",
+   "event.education.high-school-detailed-life-20260819",
+   "event.education.high-school-vitality-and-achievements-20260819"
+  ],
+  "kn": [
+   "fact.interests.games-detailed-20260809",
+   "preference.communication.no-canned-reassurance-20260819"
+  ],
+  "assoc": []
+ },
+ "g02": {
+  "q": "双十一想囤点零食，帮我看看有没有划算的",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "event.food.bread-consultation-and-home-meals-20260902",
+   "event.family.runaway-detail-supplement-20260829",
+   "state.current.personal-spending-constraint-20260814"
+  ],
+  "kn": [
+   "fact.interests.games-corrections-20260830",
+   "pref.games.flag-not-filter-20260830"
+  ],
+  "assoc": []
+ },
+ "g03": {
+  "q": "心里堵得慌，说不上来为啥",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "state.current.speech-blocks-and-word-retrieval-20260829",
+   "correction.meta.friend-mode-no-swerving-20260829",
+   "state.career.archive-work-ai-questions-20260903"
+  ],
+  "kn": [
+   "preference.football.rodri",
+   "fact.health.skincare-routine-abandoned-20260901"
+  ],
+  "assoc": []
+ },
+ "g04": {
+  "q": "我在考虑要不要搬出去自己租房住",
+  "sig": "personal",
+  "mode": "capture+read",
+  "tl": [
+   "decision.career.location-open-question-20260826",
+   "decision.health.orthodontics-timing-open-20260826",
+   "correction.games.steam-wishlist-vs-owned-20260830"
+  ],
+  "kn": [
+   "rule.archive.attachment-case-by-case-20260903",
+   "model.risk-tolerance-and-agency"
+  ],
+  "assoc": []
+ },
+ "g05": {
+  "q": "之前跟那个谁吵架来着，就是跟我哥",
+  "sig": "personal",
+  "mode": "capture+read",
+  "tl": [
+   "state.current.family-conflict-emotional-load-20260827",
+   "event.early-romantic-history",
+   "event.family.brother-conflict-and-two-day-runaway"
+  ],
+  "kn": [
+   "preference.autonomy.no-means-no-20260827",
+   "fact.health.sunscreen-avoidance-social-judgment-20260829"
+  ],
+  "assoc": [
+   "model.inner-activity-and-visible-melancholy-",
+   "model.rational-social-judgment",
+   "correction.relationship.gift-attribution-xia"
+  ]
+ },
+ "g06": {
+  "q": "最近老失眠怎么办",
+  "sig": "personal",
+  "mode": "capture+read",
+  "tl": [
+   "state.career.archive-work-ai-questions-20260903",
+   "event.family-laptop-purchase-conflict-20260725"
+  ],
+  "kn": [],
+  "assoc": []
+ },
+ "g07": {
+  "q": "考公的资料书该买哪些",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "state.career.lieflat-vs-exploitation-tension-20260903",
+   "state.work.xianyu-side-business-stopped-20260903",
+   "state.career.ai-route-exploration-20260903"
+  ],
+  "kn": [
+   "model.subjective-misfortune-and-self-blame",
+   "preference.relationship.non-scripted-partnership-evidence-20260724"
+  ],
+  "assoc": [
+   "correction.meta.read-archive-before-answerin",
+   "model.archaeology-as-purpose",
+   "model.family-support-and-dignity-tension"
+  ]
+ },
+ "g08": {
+  "q": "跟室友关系有点僵，怎么缓和下",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "event.relationship.dorm-skincare-mockery-20260901",
+   "event.education.high-school-detailed-life-20260819",
+   "state.current.money-guilt-virtual-spending-20260830"
+  ],
+  "kn": [
+   "pref.games.no-text-narrative-wariness-20260830",
+   "model.privacy.leak-risk-assessment-20260901"
+  ],
+  "assoc": []
+ },
+ "g09": {
+  "q": "看上一个耳机挺贵的，但是我又觉得花这么多钱有点心疼，毕竟是家里给的生活费",
+  "sig": "personal",
+  "mode": "capture+read",
+  "tl": [
+   "decision.family.lawsuit-uninvolved-20260903",
+   "state.current.personal-spending-constraint-20260814",
+   "event.food.bread-consultation-and-home-meals-20260902"
+  ],
+  "kn": [
+   "model.stability-home-wish",
+   "value.relationship.loved-one-autonomy-and-life-plans-20260826"
+  ],
+  "assoc": [
+   "event.music.earbud-discovery-20260820",
+   "event.self-image.haircut-mirror-selfie-20260",
+   "event.family.mother-xinjiang-absence-return-"
+  ]
+ },
+ "g10": {
+  "q": "那个啥来着就那个",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "event.game.jianyu-evil-route-20260830",
+   "event.writing.letter-to-xiaopang-days-after-loss-202503",
+   "event.friendship.xiaopang-satellite-lake-boating"
+  ],
+  "kn": [
+   "fact.health.sunscreen-avoidance-social-judgment-20260829",
+   "value.relationship.partner-criteria-v2-20260830"
+  ],
+  "assoc": [
+   "model.inner-activity-and-visible-melancholy-",
+   "model.rational-social-judgment",
+   "event.health.adolescent-acne-tremor-and-self"
+  ]
+ },
+ "g11": {
+  "q": "荒野大镖客2",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "state.current.money-guilt-virtual-spending-20260830",
+   "state.games.library-and-buyback-snapshot-20260830"
+  ],
+  "kn": [
+   "fact.games.witcher3-feel-anchored-by-rdr2-20260830",
+   "fact.games.played-list-20260830"
+  ],
+  "assoc": [
+   "pref.games.flag-not-filter-20260830",
+   "event.family.mother-money-and-banquet-confli",
+   "model.game-preference-meaning-challenge-and-"
+  ]
+ },
+ "g12": {
+  "q": "这月想大买一笔犒劳自己",
+  "sig": "personal",
+  "mode": "capture+read",
+  "tl": [
+   "event.commerce.used-drive-return-20260819",
+   "event.family.mother-money-and-banquet-conflict-20260827",
+   "decision.football.shoe-only-plan-20260820"
+  ],
+  "kn": [
+   "preference.family-money-and-social-obligation-boundaries-20260827",
+   "model.autonomy-dignity"
+  ],
+  "assoc": []
+ },
+ "g13": {
+  "q": "写代码写得心累",
+  "sig": "technical",
+  "mode": "maintenance-read",
+  "tl": [
+   "event.family.brother-conflict-and-two-day-runaway",
+   "event.health.field-toilet-incident-20260829"
+  ],
+  "kn": [
+   "fact.memory.runaway-wanda-sisyphe-bawangbieji",
+   "model.privacy.leak-risk-assessment-20260901"
+  ],
+  "assoc": []
+ },
+ "g14": {
+  "q": "苇名城的那个boss怎么打",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "event.education.high-school-detailed-life-20260819",
+   "event.writing.letter-to-xiaopang-days-after-loss-202503",
+   "event.friendship.xiaopang-satellite-lake-boating"
+  ],
+  "kn": [
+   "fact.health.easy-thin-constitution-20260830",
+   "pref.games.no-text-narrative-wariness-20260830"
+  ],
+  "assoc": [
+   "model.inner-activity-and-visible-melancholy-",
+   "model.rational-social-judgment",
+   "event.health.adolescent-acne-tremor-and-self"
+  ]
+ },
+ "g15": {
+  "q": "我上个月是不是说过要买什么来着",
+  "sig": "non-personal",
+  "mode": "maintenance-read",
+  "tl": [
+   "correction.meta.friend-mode-no-swerving-20260829",
+   "event.food.bread-consultation-and-home-meals-20260902",
+   "state.career.lieflat-vs-exploitation-tension-20260903"
+  ],
+  "kn": [
+   "rule.collaboration.negative-reviews-as-reference-20260830",
+   "rule.self-distillation.contextual-relevance-expansion-20260814"
+  ],
+  "assoc": []
+ },
+ "g16": {
+  "q": "我妈让我寒假回家，但我其实想留学校这边打寒假工，你说怎么办",
+  "sig": "personal",
+  "mode": "capture+read",
+  "tl": [
+   "state.career.archive-work-ai-questions-20260903",
+   "event.family.mother-xinjiang-absence-return-and-infantilizing-care",
+   "event.health.adolescent-acne-tremor-and-self-image-transition"
+  ],
+  "kn": [
+   "fact.food.instant-noodles-many-20260903",
+   "preference.life.no-children-plan-20260830"
+  ],
+  "assoc": [
+   "model.archaeology-as-purpose",
+   "event.family-finance-publicization-20260809",
+   "model.inner-activity-and-visible-melancholy-"
+  ]
+ }
+}

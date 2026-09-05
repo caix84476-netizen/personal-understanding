@@ -1,0 +1,272 @@
+{
+ "h01": {
+  "q": "室友借了我的充电器一直不还，好烦",
+  "sig": "personal",
+  "tl": [
+   "event.game.jianyu-evil-route-20260830",
+   "event.family.runaway-detail-supplement"
+  ],
+  "kn": [
+   "fact.interests.games-detailed-20260809",
+   "preference.transport.robotaxi-experien"
+  ],
+  "assoc": [],
+  "noise": []
+ },
+ "h02": {
+  "q": "今天上课说错话了，越想越尴尬",
+  "sig": "non-personal",
+  "tl": [
+   "event.family.banquet-called-out-freeze",
+   "event.family.extended-family-banquet-t"
+  ],
+  "kn": [
+   "fact.relationship.xiaopang-last-chat-n",
+   "preference.project.marketing-style-hig"
+  ],
+  "assoc": [],
+  "noise": []
+ },
+ "h03": {
+  "q": "steam秋促来了，帮我看看愿望单挑一个",
+  "sig": "non-personal",
+  "tl": [
+   "state.games.wishlist-update-20260830",
+   "state.games.wishlist-batch2-20260830"
+  ],
+  "kn": [
+   "rule.collaboration.point-check-before-",
+   "fact.interests.games-corrections-20260"
+  ],
+  "assoc": [
+   "model.game-preference-meaning-challeng",
+   "rule.personal-understanding-v2-archite",
+   "event.family.mother-money-and-banquet-"
+  ],
+  "noise": []
+ },
+ "h04": {
+  "q": "我妈让我这周末视频，我不太想接",
+  "sig": "non-personal",
+  "tl": [
+   "event.writing.essay-love-two-souls-202",
+   "event.family.shengxueyan-attended-and-"
+  ],
+  "kn": [
+   "pref.games.no-text-narrative-wariness-",
+   "fact.games.florence-review-reassessmen"
+  ],
+  "assoc": [
+   "model.archaeology-as-purpose",
+   "event.family-finance-publicization-202",
+   "model.inner-activity-and-visible-melan"
+  ],
+  "noise": [
+   "inner-activity"
+  ]
+ },
+ "h05": {
+  "q": "档案系加微信的那个学姐叫啥来着",
+  "sig": "non-personal",
+  "tl": [
+   "event.writing.letter-to-xiaopang-days-",
+   "state.current.university-financial-tra"
+  ],
+  "kn": [
+   "fact.health.easy-thin-constitution-202",
+   "fact.interests.reading-history-and-ope"
+  ],
+  "assoc": [
+   "model.inner-activity-and-visible-melan",
+   "model.rational-social-judgment",
+   "correction.meta.personal-understanding"
+  ],
+  "noise": [
+   "inner-activity",
+   "rational-social-judgment"
+  ]
+ },
+ "h06": {
+  "q": "坐得脖子肩膀疼，有没有拉伸动作",
+  "sig": "non-personal",
+  "tl": [
+   "event.education.high-school-detailed-l",
+   "event.education.high-school-vitality-a"
+  ],
+  "kn": [
+   "fact.interests.games-corrections-20260",
+   "model.critical-evidence-seeking"
+  ],
+  "assoc": [],
+  "noise": []
+ },
+ "h07": {
+  "q": "我想把personal-understanding的代码备份到云端，有什么建议",
+  "sig": "technical",
+  "tl": [
+   "event.data-loss-and-storage-failure-20",
+   "event.meta.skill-purpose-evolved-to-co"
+  ],
+  "kn": [
+   "supplement.project.personal-understand",
+   "rule.collab.direct-disagreement-author"
+  ],
+  "assoc": [
+   "correction.relationship.zjh-is-xiaozen",
+   "event.family.mother-money-and-banquet-",
+   "event.family.brother-conflict-and-two-"
+  ],
+  "noise": []
+ },
+ "h08": {
+  "q": "我哥又开口跟我借钱了",
+  "sig": "non-personal",
+  "tl": [
+   "event.family.laptop-funding-conflict-2",
+   "event.family.mother-money-and-banquet-"
+  ],
+  "kn": [
+   "value.relationship.companionship-and-d",
+   "preference.family-money-and-social-obl"
+  ],
+  "assoc": [
+   "event.health.adolescent-acne-tremor-an",
+   "model.family-support-and-dignity-tensi",
+   "model.aesthetic-emotional-resonance-20"
+  ],
+  "noise": [
+   "adolescent-acne"
+  ]
+ },
+ "h09": {
+  "q": "看到只狼全版本便宜了，要不要入",
+  "sig": "non-personal",
+  "tl": [
+   "event.self-image.mirror-selfie-2026083",
+   "state.education.admission"
+  ],
+  "kn": [
+   "rule.archive.attachment-case-by-case-2",
+   "fact.interests.games-detailed-20260809"
+  ],
+  "assoc": [
+   "fact.games.played-list-20260830",
+   "model.game-preference-meaning-challeng",
+   "event.family.mother-money-and-banquet-"
+  ],
+  "noise": []
+ },
+ "h10": {
+  "q": "看别人出去玩羡慕死了",
+  "sig": "non-personal",
+  "tl": [
+   "event.food.bread-consultation-and-home",
+   "event.family.runaway-detail-supplement"
+  ],
+  "kn": [
+   "model.writing.multi-layer-satire",
+   "model.earned-resources-and-luck-202608"
+  ],
+  "assoc": [
+   "event.family.mother-money-and-banquet-",
+   "model.aesthetic-emotional-resonance-20",
+   "model.family-support-and-dignity-tensi"
+  ],
+  "noise": []
+ },
+ "h11": {
+  "q": "考研群学姐问我档案学值不值得读",
+  "sig": "non-personal",
+  "tl": [
+   "decision.education.career-route-202607",
+   "decision.education.university-study-st"
+  ],
+  "kn": [
+   "correction.meta.read-archive-before-an",
+   "preference.career.csoe-over-establishm"
+  ],
+  "assoc": [
+   "model.archaeology-as-purpose",
+   "model.deep-investment-with-self-correc",
+   "model.self-representation.allegorical-"
+  ],
+  "noise": []
+ },
+ "h12": {
+  "q": "最近食堂饭菜是真难吃",
+  "sig": "non-personal",
+  "tl": [
+   "state.current.pre-departure-mindset-20",
+   "source.intake.2026-07-19"
+  ],
+  "kn": [
+   "preference.food.cafeteria-over-home",
+   "model.home-cooking-quality-20260818"
+  ],
+  "assoc": [],
+  "noise": []
+ },
+ "h13": {
+  "q": "帮我写个请假条",
+  "sig": "non-personal",
+  "tl": [
+   "event.relationship.xiaozeng-medication",
+   "event.education.high-school-vitality-a"
+  ],
+  "kn": [],
+  "assoc": [],
+  "noise": []
+ },
+ "h14": {
+  "q": "马上要搬进宿舍了，有什么要注意的",
+  "sig": "non-personal",
+  "tl": [
+   "event.education.high-school-detailed-l",
+   "state.current.pre-departure-mindset-20"
+  ],
+  "kn": [
+   "supplement.project.personal-understand",
+   "rule.collab.direct-disagreement-author"
+  ],
+  "assoc": [],
+  "noise": []
+ },
+ "h15": {
+  "q": "上次特别想玩的那个游戏叫什么名字",
+  "sig": "non-personal",
+  "tl": [
+   "event.game.jianyu-evil-route-20260830",
+   "correction.relationship.xiaotao-name-2"
+  ],
+  "kn": [
+   "fact.interests.reading-history-and-ope",
+   "fact.interests.games-corrections-20260"
+  ],
+  "assoc": [
+   "correction.meta.personal-understanding",
+   "rule.personal-understanding-v2-archite",
+   "fact.games.witcher3-feel-anchored-by-r"
+  ],
+  "noise": []
+ },
+ "h16": {
+  "q": "我爸又来电话说房子的事",
+  "sig": "non-personal",
+  "tl": [
+   "event.relationship.promise-transport-b",
+   "event.family.mother-money-and-banquet-"
+  ],
+  "kn": [
+   "value.relationship.companionship-and-d",
+   "rule.reference.yongchuan-lake-canonica"
+  ],
+  "assoc": [
+   "model.contextual-family-communication-",
+   "model.inner-activity-and-visible-melan",
+   "event.family.brother-conflict-and-two-"
+  ],
+  "noise": [
+   "inner-activity"
+  ]
+ }
+}
