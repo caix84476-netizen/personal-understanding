@@ -36,6 +36,30 @@ class TwoTierClassificationTests(unittest.TestCase):
         self.assertFalse(classify_personal_turn("这个 bug 的报错太烦了")["requires_personal_understanding"])
         self.assertFalse(classify_personal_turn("这配置烦死了改不动")["requires_personal_understanding"])
 
+    def test_first_person_affect_words_fire_too(self):
+        # 2.6.1 §4d: the old `elif not first` gate made STRONG_MARKERS blind to
+        # first-person affect sentences — "我堵得慌/我诸事不顺/我社死了" fell through
+        # both branches (capture recall 0.438→1.000 on the frozen gold set).
+        for msg in ("我堵得慌", "我诸事不顺", "我心情一般", "我社死了", "我心里不是滋味", "不是我尴尬，是他尴尬"):
+            decision = classify_personal_turn(msg)
+            self.assertTrue(decision["requires_personal_understanding"], msg)
+            self.assertIn("first-person-affect-word", decision["reasons"], msg)
+        # subject-dropped rows keep the original reason label (no churn in traces)
+        self.assertIn("affective-or-state-without-subject", classify_personal_turn("闷得慌")["reasons"])
+
+    def test_shape_slot_catches_open_forms_and_skips_physical_needs(self):
+        # X得慌 productive frame: catches affect variants the closed vocabulary cannot
+        # enumerate; physical-need fillers (饿/渴/撑) and productive-but-generic 好难
+        # stay out (measured zero of 22 frozen guards for 得慌; 好难 would fire on
+        # homework-help turns).
+        self.assertTrue(classify_personal_turn("闷得慌，透不过气")["requires_personal_understanding"])
+        self.assertTrue(classify_personal_turn("我这两天憋得慌")["requires_personal_understanding"])
+        self.assertTrue(classify_personal_turn("干啥啥不行")["requires_personal_understanding"])
+        self.assertFalse(classify_personal_turn("我饿得慌")["requires_personal_understanding"])
+        self.assertFalse(classify_personal_turn("渴得慌")["requires_personal_understanding"])
+        self.assertFalse(classify_personal_turn("这题好难")["requires_personal_understanding"])
+        self.assertFalse(classify_personal_turn("写代码写得憋屈")["requires_personal_understanding"])  # tech veto still wins
+
     def test_light_tier_is_normalized_to_full(self):
         # 2.4.0 两档制：轻量档并入完整档。tier=light 枚举仅为兼容保留，
         # 声明一律按 full 处理；活动足迹轮次改受 SKILL.md 足迹纪律约束，不再是独立档位。

@@ -22,6 +22,14 @@ MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天",
 STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦", "emo", "低落", "郁闷", "崩溃", "疲惫", "很丧", "好丧", "有点丧", "挺丧", "丧得", "堵得慌", "心里堵", "憋屈", "心里闷", "心累", "好累啊", "撑不住", "尴尬", "难为情", "社死", "丢人", "羞耻", "不是滋味", "诸事不顺")  # 词表法已到头的诚实边界见 SKILL 低信号节  # 低信号情感第二补充批：g03 实测"心里堵得慌"漏判后加；心累依赖 TECHNICAL 否决（写代码写得心累=技术轮）  # 丧 须多字形态："丧尸"是游戏名词（实测误触发足迹轮）
 TECHNICAL = ("python", "javascript", "typescript", "代码", "配置", "报错", "bug", "mcp", "插件", "仓库", "git", "接口", "数据库", "部署")
 
+# 2.6.1 §4d: open morphological slot for affect shapes the closed vocabulary cannot
+# enumerate (X得慌 productive frame). Deliberately narrow — measured: 「好难」 also fits
+# a productive-frame mindset but fires on homework-help turns ("这题好难") = false
+# capture churn; 「X得慌」 hit zero of 22 frozen guards and caught the two edge probes
+# the vocabulary missed (闷得慌/难受得慌). Physical-need fillers (饿/渴/撑) are excluded
+# (「我饿得慌」 is a hunger state, not affect; 吃什么 belongs to the skip tier).
+_AFFECT_SHAPE = re.compile(r"(?!(?:饿|渴|撑))[\u4e00-\u9fff]得慌|干啥啥不行|哪哪都不对")
+
 def now_iso() -> str: return datetime.now().astimezone().isoformat(timespec="seconds")
 def receipt_dir(root: Path = DEFAULT_ROOT) -> Path: return root / "memory" / "turn-receipts"
 def receipt_path(turn_id: str, root: Path = DEFAULT_ROOT) -> Path: return receipt_dir(root) / f"{turn_id}.json"
@@ -48,13 +56,18 @@ def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
     if any(x in compact for x in EXPLICIT): reasons.append("explicit-memory-or-self-understanding-request")
     first = bool(re.search(r"我|本人|自己|咱们?", compact))
     if first and any(x in compact for x in MARKERS): reasons.append("first-person-experience-or-state")
-    # STRONG_MARKERS fire without a first-person pronoun (2.5.0 §8): Chinese routinely
-    # drops the subject ("最近状态不太好"、"下巴冒痘了挺烦"), and the old first-AND-marker
-    # rule systematically missed 抒情感慨/状态更新 turns the two-tier design most wants.
-    # Technical-context guard: a STRONG hit is vetoed when the turn also carries a
-    # TECHNICAL token, so "这个 bug 让我很崩溃" stays technical.
-    elif not first and any(x in compact for x in STRONG_MARKERS) and not any(x in compact.casefold() for x in TECHNICAL):
-        reasons.append("affective-or-state-without-subject")
+    # STRONG_MARKERS fire WITHOUT requiring a dropped subject (2.5.0 §8, 2.6.1 §4d):
+    # Chinese drops the subject ("最近状态不太好"), so the rule must work with and
+    # without 我 — but the old `elif not first` gate made the whole STRONG layer blind
+    # to first-person affect sentences: "我堵得慌/我诸事不顺/我心情一般" fell through
+    # both branches. Measured on the frozen 32-utterance gold set + gap probes:
+    # capture recall 0.438 → 1.000 with zero new false triggers; the handoff's
+    # "四连漏 vocabulary exhaustion" diagnosis was mostly this structural gate.
+    # Technical-context guard unchanged: a STRONG hit is vetoed when the turn also
+    # carries a TECHNICAL token, so "这个 bug 让我很崩溃"/"写代码写得心累" stay technical.
+    elif any(x in compact for x in STRONG_MARKERS) and not any(x in compact.casefold() for x in TECHNICAL) \
+            or (not any(x in compact.casefold() for x in TECHNICAL) and _AFFECT_SHAPE.search(compact)):
+        reasons.append("affective-or-state-without-subject" if not first else "first-person-affect-word")
     if re.search(r"我.{0,12}(为什么|怎么会|是不是).{0,18}(这样|的人|性格|状态)", compact): reasons.append("self-explanation-request")
     required = bool(reasons) or tier == "full"
     suppressed: list[str] = []
