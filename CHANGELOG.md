@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.6.1 — 2026-09-06 — 泛化审计轮：召回/排序/分类三处修复，全部先测后改
+
+接班自验轮（用户铁律：不闭门造车、具体问题具体分析地借鉴前人、每步防过拟合三律）。全部改动沙盒实测后移植，评测底座为自动派生的集合（LongMemEval 式题型矩阵 IE/MR/TR/KU/ABS + 时间一致性金标 + 精确召回回归网，harness 与工作区镜像 parity 5/5）。
+
+- **§4b 联想通道修复（ppr.py + retrieve_v2.py，commit 8a4728b）**：口语↔规范摘要零词面重叠的记录两头不靠问题修通——①assoc 自我屏蔽（仅实体反馈进 timeline 的记录不再因"已选中"被踢出 associations，`_lexically_supported()` 门控）；②投影预算双重花费（records_of 新增 taken 集合在切片前剔除）；③同分并列改"声明序>salience>相关性>日期新先>id"；④删除 Tier1 外层 re-sort（它冲掉了 main 刚加的 relevance 键）。h16 目标记录从两头不靠到 timeline 第2 + associations 第3 带可审计 seed:father 路径。交接档案 g06"失眠漏召回"证伪：全档案无"失眠"，属空手场景非检索缺陷。
+- **§4c Generative-Agents 时间相关性（catalog_utils.recency_factor，commit ceb02ea）**：词面 event_value ×0.5^(age/180d)。自动派生 31 例时间金标违反率 0.419→0.161，精确召回网 0.617→0.617 不动；**缺日期记录中性 1.0**（9% 事件无 date_start，按"极旧"会无声埋正确记录——实测踩出）。同轮实验否决两条：SYNAPSE 激活级时间衰减在本架构（rank 仅驱动种子序）结构性无效；HippoRAG 收敛 PPR 与现状局部扩散 top30 重合 0.64 但成对判据一致——均维持现状。
+- **§4d 分类器结构修复（turn_receipts.py，commit 917bbaa）**：交接归因"词表法到头"实为 `elif not first` 结构门把 STRONG_MARKERS 对第一人称情感句锁死（"我堵得慌/我社死了/我诸事不顺"两头落空）。拆门 + 窄形态槽（X得慌框架，排除饿/渴/撑身体需求与"好难"泛化误触）。冻结金标捕获率 0.438→1.000、零新增误触、基线→修复 diff 恰 13 条全是应抓。SKILL.md 低信号段据实重写。
+- **§4f 知识更新契约修复（retrieve_v2.py STATUS_DEMOTE=0.5，commit bd7d977）**：LongMemEval 式题型矩阵发现——版本化事实的 superseded 旧行可盖过 current 新行（"录取结果"里 0721 压在 0722 上）。软降权不过滤（行仍可见、带 status 供模型讲版本链，只动顺序）。矩阵 KU 15/17→17/17，其余四型（IE/MR/TR/ABS）一项不动——无代价增益。
+- **概念卡扩充（§4a 结构审计）**：新增 emotional-writing（写作=情绪出口）、autonomy/dignity 转正式卡补口语别名、family-boundary 扩挂 5 条孤儿；salience≥3 孤儿 33→23。卡片措辞设计规则入档：aliases/正文避开"的事"类结构尾巴词（IDF 虚高会劫持联想种子）。PMI 词表内聚过滤（新词发现经典法）经行为实验否决并留档——种子走 content_hit 不经词表，砍 40% 词表零金标收益。
+- **SKILL.md**：聚合读法第2步补"entities 段命中卡也算跨域信号"（P5 端到端考研场景实测：决策卡经 entities 首位可达，照字面读前三段会漏）。
+- 测试 173→182（recency_factor 单测×4、时间一致性/h16/KU 集成×3、分类器结构×2）。诚实边界不变：associations 是候选池不是排序结果，判分由模型做。
+
 ## 2.6.0 — 2026-09-05 — 联想检索与档案词表：让"词面零重叠"的回忆变得可达
 
 承接 2026-09-05 深夜与用户的演进讨论（"回忆 ≠ 语义相似：反面与精神内核相似物打分为 0 就不可见"），全部改动先在沙盒实测、再落库；新增三层能力与一次闸门放宽。

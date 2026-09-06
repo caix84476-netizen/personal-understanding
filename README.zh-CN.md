@@ -185,7 +185,7 @@ python scripts/pipeline_view.py --latest 5
 
 ## 状态
 
-- **当前版本：v2.6.0**——联想检索（自训练词表 + 概念卡图 + PPR 扩散）、足迹轮读取闸门、管线时间线；两档调用带足迹纪律；schema 稳定（`memory/v2/` v2.0.0）；持续维护。同步发布于 [PyPI](https://pypi.org/project/personal-understanding/)。
+- **当前版本：v2.6.1**——泛化审计轮：联想通道投影修复、词面时间相关性（180 天半衰期、无日期中性）、superseded 降权、分类器第一人称情感修复；两档调用带足迹纪律；schema 稳定（`memory/v2/` v2.0.0）；持续维护。同步发布于 [PyPI](https://pypi.org/project/personal-understanding/)。
 - 兼容任何支持 MCP 的客户端。技能大脑（`SKILL.md`）以中文写成，档案可用任何语言；检索针对中英混排调优，其他语言优雅降级。
 - 路线图：可编辑面板页、更丰富的冷回溯排序、面向超大档案的可选向量旁路（按可插拔设计）、可选的静态加密档案。
 

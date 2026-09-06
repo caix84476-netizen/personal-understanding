@@ -237,7 +237,7 @@ def main() -> int:
     trace_path = None
     if not args.no_trace:
         trace_path = save_trace(trace, capture_id=args.capture_id)
-    result = {"retrieval_version": "2.6.0", "read": {"level": args.level, "query": args.query}, "timeline": timeline_rows, "entities": [compact_entity(row) for row in selected_entities], "knowledge": [row for row in selected_knowledge], "associations": association_rows, "facets": [compact_facet(row) for row in selected_facets], "current_state": data.get("current_state", {}), "followups": {"due": due}, "hypotheses": [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in carried_hypotheses], "fragments": selected_fragments, "trace": trace, "trace_path": trace_path}
+    result = {"retrieval_version": "2.6.1", "read": {"level": args.level, "query": args.query}, "timeline": timeline_rows, "entities": [compact_entity(row) for row in selected_entities], "knowledge": [row for row in selected_knowledge], "associations": association_rows, "facets": [compact_facet(row) for row in selected_facets], "current_state": data.get("current_state", {}), "followups": {"due": due}, "hypotheses": [{"id": row.get("id"), "claim": row.get("claim"), "scope": row.get("scope"), "mechanism": row.get("mechanism"), "status": row.get("status", "candidate"), "confidence": row.get("confidence")} for row in carried_hypotheses], "fragments": selected_fragments, "trace": trace, "trace_path": trace_path}
     if args.format == "markdown":
         print("# v2 Personal Understanding Read")
         print(f"Read level: {args.level}; query: {args.query or 'global spine'}\n")

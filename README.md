@@ -185,7 +185,7 @@ Not a framework thought up in one afternoon — a working archive refined throug
 
 ## Status
 
-- **Current release: v2.6.0** — associative retrieval (self-trained lexicon + concept-card graph + PPR spread), footprint-round read gate, pipeline timeline; two-tier invocation with footprint discipline; schema stable (`memory/v2/` v2.0.0); actively maintained. Also on [PyPI](https://pypi.org/project/personal-understanding/).
+- **Current release: v2.6.1** — generalization-audit release: associative-channel projection fixes, lexical recency (half-life 180d, undated-neutral), knowledge-update demotion for superseded facts, classifier first-person-affect fix; two-tier invocation with footprint discipline; schema stable (`memory/v2/` v2.0.0); actively maintained. Also on [PyPI](https://pypi.org/project/personal-understanding/).
 - Works with any MCP-capable client. The skill brain (`SKILL.md`) is written in Chinese and works with archives in any language; retrieval is tuned for mixed Chinese/Latin text and degrades gracefully elsewhere.
 - Roadmap: editable dashboard pages, richer cold-recall ranking, optional vector side-channel for very large archives (pluggable by design), optional encrypted archive-at-rest.
 
