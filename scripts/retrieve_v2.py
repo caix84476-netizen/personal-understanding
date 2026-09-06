@@ -129,6 +129,13 @@ def main() -> int:
     # because a matched entity IS an anchor the query named.
     max_query_weight = max((weights.get(term, 0.0) for term in content), default=0.0)
     ENTITY_EVENT_BOOST = 0.6
+    # 2.6.1 §4f (P6): superseded rows stay VISIBLE in the timeline (the status field
+    # ships with every row so the model can narrate version history), but an old
+    # FACT must never out-rank its CURRENT replacement — measured via the auto-derived
+    # KU gold set: plain ranking put admission-result-20260721 (superseded) ABOVE
+    # 20260722 (current) for the probe 录取结果. Soft demotion, not filtering: the
+    # version-chain audit trail survives, ordering follows truth.
+    STATUS_DEMOTE = float(__import__("os").environ.get("PU_STATUS_DEMOTE", "0.5"))
     def event_value(row: dict) -> float:
         # 2.6.1 §4c Generative-Agents recency: multiplicative 0.5^(age/180d) on the
         # lexical value (undated rows neutral at 1.0 — see catalog_utils.recency_factor).
@@ -136,7 +143,10 @@ def main() -> int:
         # 0.419→0.161, precise-recall net 0.617→0.617, golden regressions pass.
         value = row_score(row, weights) * anchor_ratio(haystack(row), weights, content, max_query_weight)
         boost = max((entity_scores.get(ref, 0.0) for ref in row.get("entity_refs", []) if ref in entity_content_ids), default=0.0)
-        return (value + ENTITY_EVENT_BOOST * boost) * recency_factor(row)
+        v = (value + ENTITY_EVENT_BOOST * boost) * recency_factor(row)
+        if row.get("status") == "superseded":
+            v *= STATUS_DEMOTE
+        return v
     def qualifies(row: dict) -> bool:
         return content_hit(row) or bool(set(row.get("entity_refs", []) or []) & entity_content_ids)
     ranked_events = sorted(((event_value(row), row) for row in events), key=lambda pair: (-pair[0], -(pair[1].get("salience") or 0), pair[1].get("date_start") or "9999-99-99", pair[1].get("id", "")))

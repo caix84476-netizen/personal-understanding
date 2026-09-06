@@ -244,6 +244,20 @@ class TimeConsistencyRecallTests(unittest.TestCase):
         assoc = [row.get("record_id") for row in data["associations"]]
         self.assertIn("event.family.parents-lawsuit-house-rent-20260903", assoc)
 
+    def test_superseded_fact_never_outranks_its_current_replacement(self):
+        # 2.6.1 §4f knowledge-update contract (P6 matrix, KU 15/17 → 17/17 with the
+        # STATUS_DEMOTE factor): for a versioned fact, the CURRENT row must rank at
+        # or above the superseded one. 录取结果: admission-result-20260721 was
+        # superseded by …20260722 — before the fix the 21st ranked FIRST. Superseded
+        # rows stay visible (version-chain audit trail); only their ORDER moves.
+        data = self.run_probe("录取结果")
+        ids = [row.get("record_id") or row.get("id") for row in data["timeline"]]
+        old = next((i for i, x in enumerate(ids) if x == "decision.education.admission-result-20260721"), 99)
+        new = next((i for i, x in enumerate(ids) if x == "decision.education.admission-result-20260722"), 99)
+        self.assertLessEqual(new, old, f"superseded 0721 outranks current 0722: {ids[:4]}")
+        statuses = {row.get("record_id") or row.get("id"): row.get("status") for row in data["timeline"]}
+        self.assertEqual(statuses.get("decision.education.admission-result-20260721"), "superseded")
+
 
 if __name__ == "__main__":
     unittest.main()
