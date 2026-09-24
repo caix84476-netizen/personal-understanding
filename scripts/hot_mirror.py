@@ -65,7 +65,10 @@ def robocopy_mir(src: Path, dst: Path) -> int:
            "/NFL", "/NDL", "/NJH", "/NJS", "/NP"]
     for ex in EXCLUDES:
         cmd += ["/XD", ex]
-    proc = subprocess.run(cmd, capture_output=True)  # robocopy prints GBK; only exit code matters
+    # pythonw has no console: without CREATE_NO_WINDOW each robocopy spawn
+    # allocates a visible console window (the periodic black-box flash)
+    proc = subprocess.run(cmd, capture_output=True,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return proc.returncode  # 0-7 ok, >=8 failure
 
 
