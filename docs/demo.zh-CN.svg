@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="400" viewBox="0 0 768 400" font-family="Consolas, Menlo, 'Microsoft YaHei', monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3fb950"/>
+    </marker>
+    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/>
+    </marker>
+  </defs>
+  <rect width="768" height="400" fill="url(#bg)" rx="10"/>
+
+  <text x="24" y="32" fill="#e6edf3" font-size="15" font-weight="bold">你的原话进。证据出。</text>
+  <text x="24" y="52" fill="#8b949e" font-size="12">personal-understanding · 真实运行，虚构用户（李雷），零修改</text>
+  <line x1="24" y1="64" x2="744" y2="64" stroke="#30363d" stroke-width="1"/>
+
+  <rect x="24" y="78" width="700" height="62" rx="8" fill="#1c2128" stroke="#30363d"/>
+  <text x="40" y="99" fill="#58a6ff" font-size="12">1 · 用户说了一句（任何语言）</text>
+  <text x="40" y="121" fill="#e6edf3" font-size="13">今年三月我爬山摔过一次，膝盖到现在阴雨天还不舒服。</text>
+
+  <rect x="24" y="158" width="700" height="78" rx="8" fill="#0d1117" stroke="#238636"/>
+  <text x="40" y="179" fill="#3fb950" font-size="12">2 · 先原话保存，再做任何事——不可变，带哈希</text>
+  <text x="40" y="199" fill="#8b949e" font-size="11">sources/conversation/cap-demo-turn-4.txt</text>
+  <text x="40" y="217" fill="#8b949e" font-size="11">sha256: 86463d898858581e10d7c887a98ea71120e614b1e0e61b7f54d5f07eaf8bbc2</text>
+
+  <rect x="24" y="254" width="338" height="102" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="40" y="275" fill="#d2a8ff" font-size="12">3 · 派生出一条事实…</text>
+  <text x="40" y="296" fill="#e6edf3" font-size="11">状态：膝盖阴雨天仍不适，</text>
+  <text x="40" y="314" fill="#e6edf3" font-size="11">不再独自爬山。</text>
+  <text x="40" y="340" fill="#3fb950" font-size="11">并回链到第 2 步 ↩</text>
+
+  <rect x="404" y="254" width="340" height="102" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="420" y="275" fill="#58a6ff" font-size="12">4 · 之后，一次检索找到它…</text>
+  <text x="420" y="296" fill="#e6edf3" font-size="11">"李雷以后还能约谁爬山？"</text>
+  <text x="420" y="314" fill="#8b949e" font-size="11">命中膝盖那条记录——</text>
+  <text x="420" y="340" fill="#d2a8ff" font-size="11">带着完整证据链 →</text>
+
+  <path d="M 194 140 L 194 158" stroke="#3fb950" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M 194 236 L 194 254" stroke="#3fb950" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M 364 305 L 402 305" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrB)"/>
+
+  <text x="24" y="382" fill="#8b949e" font-size="11">流水线闭环：每条捕获要么派生、要么显式关闭 · v2 validation: clean, 0 errors</text>
+</svg>

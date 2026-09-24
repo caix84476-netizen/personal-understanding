@@ -47,6 +47,14 @@ Every personal message is captured **verbatim and immutably** (SHA-256 hashed, t
 | Runtime | server + vector DB + embeddings | **one folder, Python stdlib only** |
 | Where your data lives | often their cloud | **your machine. Full stop.** |
 
+## See it work — your words in, proof out
+
+A real pipeline run (fictional user "Alex", real CLI output, zero edits): a message lands,
+gets captured verbatim with its SHA-256, a derived fact links back to that exact quote,
+and a later associative query surfaces it through the evidence chain.
+
+![evidence-chain demo](docs/demo.svg)
+
 ## Why not just use your agent's built-in memory?
 
 Newer agents ship with "memory" now — if that's enough for you, use it. This project exists for the people who hit its walls:
