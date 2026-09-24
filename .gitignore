@@ -16,6 +16,9 @@ __pycache__/
 _tmp_*
 *.tmp
 *.bak-*
+tmp_capture_round*.txt
+.sync-pending.md
+daily-backup-hidden.vbs
 
 # OS noise
 .DS_Store
