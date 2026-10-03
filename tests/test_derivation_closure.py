@@ -220,16 +220,30 @@ class DerivationClosureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         names = {tool["name"] for tool in data["result"]["tools"]}
-        self.assertTrue({"personal_finalize_capture", "personal_derivation_status"}.issubset(names))
+        # 2.8.0：personal_derivation_status 并入 personal_validate（derivation=embed 段）。
+        self.assertTrue({"personal_finalize_capture", "personal_validate"}.issubset(names))
+        # 闭环审计仍可从 MCP 句柄直接取到（迁移期 personal_derivation_status 返回指向指针）。
+        spec = importlib.util.spec_from_file_location("mcp_server_closure_names_test", SCRIPTS / "mcp_server.py")
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader
+        spec.loader.exec_module(module)
+        pointer = module.handle("tools/call", {"name": "personal_derivation_status", "arguments": {}})
+        self.assertTrue(pointer["isError"])
+        self.assertIn("personal_validate", pointer["content"][0]["text"])
         source = (SCRIPTS / "mcp_server.py").read_text(encoding="utf-8")
         self.assertIn("discover_captures(ROOT).get(capture_id)", source)
 
-    def test_mcp_post_write_validation_does_not_require_closed_captures(self):
-        # §6.1: an MCP write runs mid-turn, while the current capture is still
-        # pending by design. Post-write validation must NOT use
-        # --require-closed-captures, or every successful write false-errors and
-        # invites retries/duplicate records. The explicit personal_validate tool
-        # keeps the closed-capture gate — that is the model's deliberate turn check.
+    def test_mcp_write_path_never_bundles_inline_validation(self):
+        # §6.1 (2.7.0 revision): an MCP write runs mid-turn, while the current
+        # capture is still pending by design. Until 2.7.0 every write bundled an
+        # inline rebuild+validate whose exit code became isError — under
+        # concurrency the validate subprocess raced other writers and reported
+        # SUCCESSFUL writes as failures, coercing blind retries and duplicate
+        # records. Writes now verify only their own landing (read-back + ledger
+        # placement); views rebuild lazily on read (view_freshness). The guard
+        # this test keeps: no write-path tool may run validate_memory.py inline
+        # again, and the explicit personal_validate tool still carries the
+        # --json --require-closed-captures gate — the model's deliberate turn check.
         spec = importlib.util.spec_from_file_location("mcp_server_closure_test", SCRIPTS / "mcp_server.py")
         module = importlib.util.module_from_spec(spec)
         assert spec.loader
@@ -242,12 +256,11 @@ class DerivationClosureTests(unittest.TestCase):
             return 0, name
 
         with patch.object(module, "run_script", side_effect=fake_run_script):
-            module.rebuild_and_validate()
             result = module.handle("tools/call", {"name": "personal_validate", "arguments": {}})
 
-        self.assertIn(("validate_memory.py", []), calls)
-        self.assertNotIn(("validate_memory.py", ["--require-closed-captures"]), calls)
         self.assertIn(("validate_memory.py", ["--json", "--require-closed-captures"]), calls)
+        self.assertNotIn(("validate_memory.py", []), calls)
+        self.assertNotIn(("validate_memory.py", ["--require-closed-captures"]), calls)
         self.assertFalse(result["isError"])
 
     def test_mcp_validate_keeps_strict_option_with_closed_capture_gate(self):
@@ -256,7 +269,8 @@ class DerivationClosureTests(unittest.TestCase):
         assert spec.loader
         spec.loader.exec_module(module)
 
-        with patch.object(module, "run_script", return_value=(0, "ok")) as run_script:
+        with patch.object(module, "ensure_fresh_views", return_value=(False, "")), \
+                patch.object(module, "run_script", return_value=(0, "ok")) as run_script:
             module.handle("tools/call", {"name": "personal_validate", "arguments": {"strict": True}})
 
         run_script.assert_called_once_with("validate_memory.py", ["--json", "--require-closed-captures", "--strict"])

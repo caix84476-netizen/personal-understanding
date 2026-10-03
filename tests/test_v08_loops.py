@@ -15,6 +15,16 @@ sys.path.insert(0, str(SCRIPTS))
 HAS_ARCHIVE = (ROOT / "memory" / "v2").is_dir()
 
 
+def _live_pending_ids() -> list[str]:
+    """Pending captures in the LIVE archive (read-only peek at the ledger json —
+    the gate's own audit path needs a subprocess; the premise check must not)."""
+    try:
+        led = json.loads((ROOT / "memory" / "derivation-ledger.json").read_text(encoding="utf-8"))
+        return [cid for cid, e in led.get("captures", {}).items() if e.get("status") == "pending"]
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
 class SalienceReviewTests(unittest.TestCase):
     def _run(self, *args):
         return subprocess.run(
@@ -77,6 +87,7 @@ sys.exit(0)
 
 class SessionGateTests(unittest.TestCase):
     @unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/)")
+    @unittest.skipIf(_live_pending_ids(), "live archive has an open derivation loop (pending capture) — the gate hard-failing is then CORRECT behavior and this test's clean-repo premise is absent (2.7.0: a real pending appeared mid-round from live usage)")
     def test_gate_passes_on_current_repo(self):
         result = subprocess.run(
             [sys.executable, str(SCRIPTS / "session_check.py"), "--allow-warnings"],

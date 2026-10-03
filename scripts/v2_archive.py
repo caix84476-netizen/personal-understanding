@@ -29,11 +29,22 @@ JSONL_FILES = {
 }
 SALIENCE_LABELS = {3: "主轴", 2: "关键", 1: "关联", 0: "提及"}
 FOLLOWUP_OPEN_STATUSES = {"pending", "due", "overdue"}
-ENTITY_REDIRECTS = {
-    "entity.friend.best-friend": "entity.friend.xiaopang",
-    "entity.friend.xiaoze": "entity.friend.xiaozhang",
-    "entity.relationship.ambiguous-person": "entity.relationship.xiaoxu",
-}
+
+
+def _load_private_mappings() -> dict[str, Any]:
+    """Per-user migration redirects and legacy seeds live in memory/v2/private-mappings.json
+    (gitignored): the repo ships the mechanism, personal data never enters it. Fresh
+    installs rebuild entities purely from their own kind=entity records."""
+    path = V2_ROOT / "private-mappings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+_PRIVATE_MAPPINGS = _load_private_mappings()
+ENTITY_REDIRECTS: dict[str, str] = dict(_PRIVATE_MAPPINGS.get("entity_redirects") or {})
 
 
 def canonical_entity_id(entity_id: str) -> str:
@@ -118,10 +129,17 @@ def resolve_followup(followup_id: str, *, resolution: str, note: str = "", captu
     """
     if resolution not in FOLLOWUP_CLOSED_STATUSES:
         raise ValueError(f"resolution 必须是 {'/'.join(sorted(FOLLOWUP_CLOSED_STATUSES))}，收到：{resolution}")
-    if len(note.strip()) < 4:
-        raise ValueError("关闭回访必须写明具体原因（answered/declined/resolved 的依据）")
     capture_id = str(capture_id or "").strip()
     base = root or ROOT
+    # Identity before content: a bogus id used to be masked by the note-length
+    # error ("必须写明原因") when both were wrong, sending the model off to write
+    # a better note for a followup that does not exist.
+    existing = next((row for row in jsonl_read(base / "memory" / "v2" / "followups.jsonl")
+                     if row.get("id") == followup_id), None)
+    if existing is None:
+        raise ValueError(f"followup 不存在：{followup_id}；请核对 id（followup_check.py 可列出全部回访）")
+    if len(note.strip()) < 4:
+        raise ValueError("关闭回访必须写明具体原因（answered/declined/resolved 的依据）")
     if capture_id:
         from derivation_ledger import discover_captures
         if capture_id not in discover_captures(base):
@@ -181,8 +199,15 @@ def normalized_phase(value: str | None) -> str:
 def parse_date_value(value: str | None) -> tuple[str | None, str]:
     raw = str(value or "").strip()
     if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", raw):
+        # Calendar-checked since 2.7.0: "2026-13-99" used to pass the regex,
+        # land in the projection verbatim, and silently mean "undated" for
+        # recency/date display — a date that lies is worse than no date.
+        try:
+            date(int(raw[:4]), int(raw[5:7]), int(raw[8:10]))
+        except ValueError:
+            return None, "unknown"
         return raw, "day"
-    if re.fullmatch(r"20\d{2}-\d{2}", raw):
+    if re.fullmatch(r"20\d{2}-\d{2}", raw) and 1 <= int(raw[5:7]) <= 12:
         return raw + "-01", "month"
     if re.fullmatch(r"20\d{2}", raw):
         return raw + "-01-01", "year"
@@ -328,25 +353,12 @@ def build_fragments(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], d
                     fragment_by_id[capture_map[key]]["record_refs"].append(record_id)
     return fragments, dict(record_fragments)
 
-SEED_ENTITIES = [
-    ("entity.school.guangxi-minzu-university", "广西民族大学", "school_or_organization", ["广西民族大学"]),
-    ("entity.program.archives-science", "档案学", "concept", ["档案学"]),
-    ("entity.concept.archaeology", "考古", "concept", ["考古", "田野考古"]),
-    ("entity.interest.football", "足球", "game_or_media", ["足球", "踢球"]),
-    ("entity.school.high-school", "高中", "school_or_organization", ["高中", "高三", "文科班"]),
-    ("entity.school.middle-school", "初中", "school_or_organization", ["初中"]),
-    ("entity.object.laptop", "电脑与笔记本", "object", ["电脑", "笔记本", "笔记本电脑"]),
-    ("entity.object.football-shoes", "足球鞋", "object", ["足球鞋", "碎钉"]),
-    ("entity.object.earbuds", "耳机与平头塞", "object", ["耳机", "平头塞"]),
-    ("entity.book.tianchao-collapse", "《天朝的崩溃》", "book_or_work", ["天朝的崩溃"]),
-    ("entity.book.century-solitude", "《百年孤独》", "book_or_work", ["百年孤独"]),
-    ("entity.game.steam-library", "Steam 游戏库", "game_or_media", ["Steam", "游戏库", "游戏"]),
-    ("entity.environment.home", "家庭与居住环境", "environment", ["家庭", "家里", "居住环境"]),
-    ("entity.concept.autonomy", "自主性", "concept", ["自主性", "自主"]),
-    ("entity.concept.dignity", "尊严", "concept", ["尊严"]),
-    ("entity.concept.ai-agi", "AI 与 AGI", "concept", ["AI", "AGI"]),
-    ("entity.place.beijing", "北京", "place", ["北京"]),
-    ("entity.place.coastal-cities", "沿海发达城市", "place", ["沿海", "发达城市"]),
+# Legacy v0→v2 migration seeds: per-user entity cards born from old summaries,
+# loaded from memory/v2/private-mappings.json (see _load_private_mappings).
+# Empty by default — a fresh archive has no legacy summaries to seed from.
+SEED_ENTITIES: list[tuple[str, str, str, list[str]]] = [
+    (str(row[0]), str(row[1]), str(row[2]), [str(a) for a in row[3]])
+    for row in (_PRIVATE_MAPPINGS.get("seed_entities") or [])
 ]
 
 

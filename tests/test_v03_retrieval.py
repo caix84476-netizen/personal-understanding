@@ -30,7 +30,14 @@ class RetrievalV2Tests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertEqual(data["catalog_version"], "2.0.0")
         self.assertIn("v2", data)
-        self.assertGreaterEqual(len(data["v2"]["spine"]), 50)
+        # 2.7.0 budget note: same intent as test_v05 — a substantial, non-degenerate
+        # spine with honest truncation metadata when the survey budget caps it
+        # (measured floor ~45 on the grown archive).
+        self.assertGreaterEqual(len(data["v2"]["spine"]), 40)
+        if len(data["v2"]["spine"]) < 60:
+            budget = data.get("budget") or {}
+            self.assertTrue(budget.get("truncated"), "a capped spine must declare truncation")
+            self.assertGreater(budget.get("omitted", {}).get("v2.spine", 0), 0)
         self.assertGreaterEqual(len(data["v2"]["entities"]), 20)
         self.assertGreaterEqual(len(data["v2"]["facets"]), 20)
         self.assertNotIn("sources", data)

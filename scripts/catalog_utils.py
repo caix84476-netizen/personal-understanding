@@ -495,16 +495,46 @@ def term_weights(terms: list[str], docs: list[str], alias_singles: set[str] = fr
 
 
 def weighted_match_score(haystack: str, weights: dict[str, float]) -> float:
-    """Length-normalized weighted term match.
+    """Length-normalized weighted term match, counted as maximal spans.
 
-    Sum of weights for terms present in the haystack, divided by 1+log(len) so very
-    long records cannot win on bulk alone. A 5000-char record needs far more matched
-    terms than a 200-char one to reach the same score.
+    2.7.0: the old sum checked every query term for membership in the text, so a
+    single text occurrence of "我爸又" scored as 我爸+爸又+我爸又 — three weights
+    for one character span. Nested n-grams triple-counting one concept let
+    incidental sentence-flood matches (电话 anywhere, 孩子的事 matching 子的事)
+    pile 2-4x their honest weight and bury entity-referred records (h16 rank 16).
+    The matcher now scans left to right, takes the longest term at each position,
+    and counts each distinct term once — TF honesty: occurrences are spans, and a
+    substring inside an already-matched span is the same hit, not another one.
+    Type-based counting (each term at most once per document) is preserved from
+    the old semantics; only the overlap double-counting changes.
     """
     text = haystack.casefold()
     if not weights or not text:
         return 0.0
-    total = sum(weight for term, weight in weights.items() if term in text)
+    terms_by_len: dict[int, set[str]] = {}
+    first_chars: set[str] = set()
+    for term in weights:
+        if not term:
+            continue
+        terms_by_len.setdefault(len(term), set()).add(term)
+        first_chars.add(term[0])
+    max_len = max(terms_by_len)
+    matched: set[str] = set()
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] not in first_chars:
+            i += 1
+            continue
+        for size in range(min(max_len, n - i), 0, -1):
+            term = text[i : i + size]
+            if term in terms_by_len.get(size, ()):
+                matched.add(term)
+                i += size
+                break
+        else:
+            i += 1
+    total = sum(weights[term] for term in matched)
     return total / (1 + math.log(1 + len(text)))
 
 

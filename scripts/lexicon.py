@@ -42,15 +42,38 @@ def load_jieba_dict() -> frozenset[str]:
 
 def build_archive_terms(min_df: int = 2, max_chars_per_record: int = 6000) -> frozenset[str]:
     """Self-trained archive lexicon: entity labels/aliases (authoritative, always in)
-    plus every 2-4 char CJK slice occurring in >= min_df distinct record/v2 texts.
+    plus 2-4 char CJK slices occurring in >= min_df distinct record/v2 texts that
+    pass boundary certification.
 
     This is the archive self-training the user asked for (5.6b): 弦一郎/艾迪芬奇/
     晕3D-style proper nouns that no general dictionary knows become lexicon words
-    because the archive itself repeats them, while cross-word accident slices
-    (郎我/卡了) stay out at df=1. O(n) over ~1MB of text; persisted by
-    rebuild_views into archive-lexicon.json so retrieval never pays it live.
+    because the archive itself repeats them.
+
+    2.7.0 boundary hygiene: the old rule admitted ANY 2-4 char slice at df>=2.
+    Cross-word accidents (我爸又/孩子的事/电话说) recur purely because function
+    characters recur, so df>=2 "certified" them as known and they escaped the
+    OOV ×0.4 demotion in term_weights — the demotion the 2.6.0 changelog promised
+    for 跨词假切片 only ever caught the df=1 ones (郎我/卡了), while the recurring
+    junk anchored unrelated records and buried entity-referred ones (h16 rank 16).
+    A slice now self-trains only when it is boundary-plausible: a single jieba
+    dictionary word, a compound of two dictionary words of >=2 chars each
+    (录取+结果), or an entity label/alias. Genuine archive-only proper nouns that
+    no dictionary knows stay OOV and keep the measured-safe ×0.4 demotion —
+    recall is relative, a sole hit still wins. O(n) over ~1MB of text; persisted
+    by rebuild_views into archive-lexicon.json so retrieval never pays it live.
     """
     from collections import Counter
+
+    jieba_words = load_jieba_dict()
+
+    def certified(piece: str) -> bool:
+        if piece in jieba_words:
+            return True
+        for cut in range(2, len(piece) - 1):
+            head, tail = piece[:cut], piece[cut:]
+            if len(head) >= 2 and len(tail) >= 2 and head in jieba_words and tail in jieba_words:
+                return True
+        return False
 
     df: Counter[str] = Counter()
 
@@ -64,7 +87,8 @@ def build_archive_terms(min_df: int = 2, max_chars_per_record: int = 6000) -> fr
                     piece = run[index : index + size]
                     if piece not in seen:
                         seen.add(piece)
-                        df[piece] += 1
+                        if certified(piece):
+                            df[piece] += 1
 
     try:
         for jsonl in V2_DIR.glob("*.jsonl"):

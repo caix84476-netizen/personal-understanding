@@ -83,7 +83,7 @@ def personalized_pagerank(adj: dict[str, set[str]], seeds: list[str], teleport: 
     lexical hit strength decides which seed dominates the spread, as HippoRAG
     does with its reset_prob vector.)"""
     seed_weights = seed_weights or {}
-    seeds = [s for s in seeds if s in adj] or [s for s in seeds]
+    seeds = [s for s in seeds if s in adj]
     if not seeds:
         return {}
     seed_set = set(seeds)
@@ -113,7 +113,8 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
                  exclude_record_ids: set[str] | None = None, max_results: int = 6,
                  records_per_seed: int = 3, neighbour_mention_cap: int = 30,
                  entity_rows: list[dict] | None = None, seed_weights: dict[str, float] | None = None,
-                 query_terms: list[str] | None = None) -> list[dict]:
+                 query_terms: list[str] | None = None,
+                 preferred: dict[str, int] | None = None) -> list[dict]:
     """Associative candidates the lexical channels missed, in two tiers.
 
     Tier 1 — seed projections: records the query-named entities already carry at
@@ -146,6 +147,17 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
             knowledge_by_ref[ref].append(row)
 
     query_hit_terms = {t.casefold() for t in (query_terms or []) if len(t) >= 2}
+    # 2.7.0 §4b completion: ``preferred`` maps the records that reached the
+    # timeline purely through entity feedback (zero query-term overlap) to their
+    # timeline rank. §4b's own rationale — "a record pulled into the timeline by
+    # entity feedback alone is exactly the associative channel's job" — promised
+    # these rows a labeled graph path, but they still had to WIN a projection
+    # slot against newer/higher-salience siblings and lost it as the seed
+    # cluster grew (h16 rank 2 → 16 when the father cluster doubled). Preferred
+    # rows project first, IN TIMELINE ORDER: the main channel's measured ranking
+    # (entity focus included) is the authority on which of them matter; the
+    # association section's job is to label the graph path, not re-rank.
+    # Term-only relevance stays as 2.6.1 left it for everything else.
 
     def records_of(node: str, taken: set[str] | None = None) -> list[tuple[str, dict, str]]:
         seen: set[str] = set()
@@ -185,6 +197,7 @@ def associations(adj: dict[str, set[str]], seeds: list[str], events: list[dict],
         declared_rank = {rid: i for i, rid in enumerate((entity_row_by_id.get(node) or {}).get("related_ids") or [])}
         rows.sort(key=lambda item: (
             0 if item[1] in declared_rank else 1,   # 声明挂靠无条件优先于"碰巧提及"
+            (preferred or {}).get(item[1], 1 << 30),  # §4b: timeline 担保的实体反哺行按 timeline 序优先投影（2.7.0）
             item[0], -relevance(item), date_neg(item), declared_rank.get(item[1], 99), item[1]))
         return [(rid, row, kind) for _, rid, row, kind in rows]
 

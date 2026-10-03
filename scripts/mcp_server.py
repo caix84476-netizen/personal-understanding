@@ -5,11 +5,13 @@ import datetime as dt
 import hashlib, json, os, re, subprocess, sys
 from pathlib import Path
 from typing import Any
-from derivation_ledger import audit_ledger, discover_captures, finalize_capture, link_record, register_capture
+from derivation_ledger import audit_ledger, discover_captures, finalize_capture, link_record, load_ledger, register_capture, repair_ledger
 from v2_archive import loose_followup_fields, resolve_followup, skill_version, write_text_atomic
 from storage import atomic_write_bytes, atomic_write_text, mutation_lock
 from turn_receipts import create_receipt, mark_captured, read_receipt
 from followup_check import check_followups
+from schema import DATE_FORMAT_HINT, VALID_CONFIDENCE, VALID_KINDS, VALID_SENSITIVITY, branch_ids, valid_date_string
+from view_freshness import ensure_fresh_views
 from cli_runtime import configure_utf8_stdio
 
 # MCP frames are UTF-8 JSON-RPC by spec; never trust the console code page (GBK/cp1252).
@@ -20,13 +22,16 @@ SCRIPTS = ROOT / "scripts"
 RECORDS = ROOT / "memory" / "records"
 V2 = ROOT / "memory" / "v2"
 CAPTURES = ROOT / "sources" / "conversation"
-VALID_KINDS = {"fact", "state", "event", "preference", "rule", "heuristic", "value", "decision", "model", "entity"}
-VALID_SENSITIVITY = {"ordinary", "private", "highly-private"}
-VALID_CONFIDENCE = {"high", "medium-high", "medium", "low", "very-high", "low-medium"}
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]+$")
+MAX_RESPONSE_CHARS = 200_000
 
 
 def text_result(text: str, *, error: bool = False) -> dict[str, Any]:
+    # Last-resort guard (2.7.0): a single MCP response must stay ingestible by a
+    # model. View budgeting keeps normal responses far below this; the guard only
+    # fires when something unbounded slipped through, and says so out loud.
+    if len(text) > MAX_RESPONSE_CHARS:
+        text = text[:MAX_RESPONSE_CHARS] + f"\n\n[响应已截断：原始 {len(text)} 字符超过 {MAX_RESPONSE_CHARS} 上限；请用更窄的 view/query/level 参数重试。]"
     return {"content": [{"type": "text", "text": text}], "isError": error}
 
 
@@ -36,36 +41,33 @@ def run_script(name: str, args: list[str]) -> tuple[int, str]:
     return proc.returncode, output
 
 
-def rebuild_and_validate() -> tuple[int, str]:
-    rebuild_code, rebuild_output = run_script("rebuild_views.py", [])
-    # Deliberately WITHOUT --require-closed-captures: an MCP write happens in the
-    # middle of a turn, while the current capture is still pending by design.
-    # Counting that normal intermediate state as an error made every successful
-    # write return isError=True (2.4.1 §6.1), which invited blind retries and
-    # duplicate records — the fail-closed-coerces-model-behavior trap. Real
-    # structural failures still surface; the whole-turn closure gate stays where
-    # it belongs: finalize_capture and session_check (same rationale as the
-    # finalize multi-capture fix, 6525299). The pending reminder lives in the
-    # success text below, not as an error flag.
-    validate_code, validate_output = run_script("validate_memory.py", [])
-    return max(rebuild_code, validate_code), f"{rebuild_output}\n{validate_output}".strip()
+def fresh_views_or_refuse() -> str | None:
+    """Read tools rebuild stale views before serving (2.7.0). Write tools no
+    longer rebuild inline: a full rebuild per write cost ~6s per turn and let
+    the post-write validate race concurrent writers, reporting *successful*
+    writes as failures. Staleness is mtime-based (view_freshness) — no flag
+    file to strand after a crash. A failed rebuild refuses the read honestly:
+    data is intact, the projection is just old."""
+    try:
+        ensure_fresh_views(ROOT, run_script)
+    except RuntimeError as exc:
+        return str(exc)
+    return None
 
 
 def tool_definitions() -> list[dict[str, Any]]:
     return [
-        {"name": "personal_preflight_turn", "description": "当前用户消息的强制内容预检。它持久化 turn receipt；个人经历、感受、关系、偏好、决定即使请求形式是润色/总结/看图，也会要求 capture。两档调用（2.4.0 起）：内容含个人材料或活动足迹类轮次（如'正在玩某游戏'）走完整档（tier=full/auto），足迹轮次受足迹纪律（写入前定向查重、恰好一条微型记录、零新增可 no-derivation 收场）；纯技术/吃喝/购物等明显无关或零增值轮次不调用本工具（跳过档）。tier=light 已废弃，传入按 full 处理。", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}, "turn_id": {"type": "string"}, "conversation_id": {"type": "string"}, "tier": {"type": "string", "enum": ["auto", "full", "light", "skip"], "description": "模型显式声明档位；auto=纯内容分类，skip=强制跳过，full=完整档兜底（含活动足迹轮次）；light 已废弃按 full 处理"}}, "required": ["text"], "additionalProperties": False}},
-        {"name": "personal_catalog", "description": "读取 v2 全局勘察。常规交互读取必须先完成当前轮次 turn preflight capture 并提供 capture_id；足迹/攻略类消息被 capture 闸门拦下时，可用 maintenance=true 做只读降级读取（有 trace 审计，不写档案），随后按足迹纪律用 tier=full 重声明补 capture。", "inputSchema": {"type": "object", "properties": {"view": {"type": "string", "enum": ["survey", "routing", "full"], "default": "survey"}, "query": {"type": "string"}, "capture_id": {"type": "string"}, "maintenance": {"type": "boolean", "default": False, "description": "显式声明非交互只读（等价 CLI --maintenance）；不能代替 capture 完成写入闭环"}}, "required": [], "additionalProperties": False}},
-        {"name": "personal_retrieve", "description": "按 v2 事件、实体和情境卡读取 probe/deep。必须先完成当前轮次 turn preflight capture，并提供 capture_id；否则拒绝读取。", "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "string"}}, "level": {"type": "string", "enum": ["probe", "deep"], "default": "probe"}, "query": {"type": "string"}, "capture_id": {"type": "string"}, "maintenance": {"type": "boolean", "default": False, "description": "显式声明非交互只读（等价 CLI --maintenance）；足迹/攻略类消息 capture 被拦时的只读降级通道，有 trace 审计"}}, "required": [], "additionalProperties": False}},
-        {"name": "personal_capture_user_turn", "description": "绑定已判定为个人材料的 turn receipt，原样保存完整用户消息。没有 preflight 或 preflight 判为非个人时拒绝写入；捕获后仍必须派生并 finalize。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "turn_id": {"type": "string"}, "text": {"type": "string"}, "conversation_id": {"type": "string"}, "captured_at": {"type": "string"}, "message_kind": {"type": "string"}}, "required": ["capture_id", "turn_id", "text"], "additionalProperties": False}},
-        {"name": "personal_add_record", "description": "创建派生记录。若来源是当前用户补充，必须先有 verbatim capture，并把 verbatim_refs 写入记录。活动足迹类微型记录传 tier=light（salience 0-1），完整档记录不传或传 full；记录层 tier 仅表示记录形态，不再表示调用档位。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": sorted(VALID_KINDS)}, "domain": {"type": "string"}, "summary": {"type": "string"}, "tier": {"type": "string", "enum": ["full", "light"], "description": "记录形态：light=活动足迹微型记录（salience 0-1）；缺省/full=完整档记录。仅表示形态，不再表示调用档位"}, "source_refs": {"type": "string"}, "verbatim_refs": {"type": "string"}, "capture_id": {"type": "string"}, "confidence": {"type": "string", "enum": sorted(VALID_CONFIDENCE), "default": "high"}, "sensitivity": {"type": "string", "enum": sorted(VALID_SENSITIVITY), "default": "ordinary"}, "related_ids": {"type": "string"}, "aliases": {"type": "string"}, "salience": {"type": "integer", "minimum": 0, "maximum": 3}, "phase": {"type": "string"}, "valid_from": {"type": ["string", "null"]}, "last_confirmed": {"type": ["string", "null"]}, "date_end": {"type": ["string", "null"]}, "date_precision": {"type": "string"}, "date_basis": {"type": "string"}, "entity_refs": {"type": "string"}, "record_role": {"type": "string"}}, "required": ["id", "kind", "summary"], "additionalProperties": False}},
-        {"name": "personal_finalize_capture", "description": "关闭当前原话捕获的派生闭环。derived 必须已有至少一条双向链接记录；无需派生时必须写具体原因（零新增收场须写明定向查重命中的既有记录）。回答前必须调用。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "disposition": {"type": "string", "enum": ["derived", "no-derivation-needed"]}, "reason": {"type": "string"}}, "required": ["capture_id", "disposition"], "additionalProperties": False}},
-        {"name": "personal_derivation_status", "description": "读取 capture→records 闭环状态，检查 pending、孤立捕获和链接漂移。", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
-        {"name": "personal_add_followup", "description": "登记有上下文的待回访问题；到期后由个人理解 Skill 主动检查。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "prompt": {"type": "string"}, "context": {"type": "string"}, "due_at": {"type": ["string", "null"]}, "due_rule": {"type": "string"}, "source_refs": {"type": "array", "items": {"type": "string"}}, "priority": {"type": "string", "enum": ["low", "normal", "high"], "default": "normal"}}, "required": ["id", "prompt", "context"], "additionalProperties": False}},
-        {"name": "personal_resolve_followup", "description": "关闭一条回访（answered 回访完成 / declined 用户不再跟进 / resolved 回路以其他方式关闭，含方案被取代或过时）；note 必填且须具体。可选 capture_id 把本轮用户回答的原话 capture 绑到回访上（须已存在于 ledger）。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "resolution": {"type": "string", "enum": ["answered", "declined", "resolved"]}, "note": {"type": "string"}, "capture_id": {"type": "string"}}, "required": ["id", "resolution", "note"], "additionalProperties": False}},
-        {"name": "personal_add_hypothesis", "description": "登记候选因果解释；默认 candidate，不得冒充事实。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "claim": {"type": "string"}, "mechanism": {"type": "string"}, "supports": {"type": "array", "items": {"type": "string"}}, "contradicts": {"type": "array", "items": {"type": "string"}}, "alternatives": {"type": "array", "items": {"type": "string"}}, "scope": {"type": "string"}, "confidence": {"type": "string", "enum": sorted(VALID_CONFIDENCE), "default": "low"}, "source_refs": {"type": "array", "items": {"type": "string"}}}, "required": ["id", "claim", "mechanism"], "additionalProperties": False}},
-        {"name": "personal_validate", "description": "校验 v2 结构，并明确区分失败、警告和干净。默认强制要求所有 capture 已完成派生闭环。只读。", "inputSchema": {"type": "object", "properties": {"strict": {"type": "boolean", "default": False}}, "additionalProperties": False}},
-        {"name": "personal_add_feedback", "description": "记录一次依赖个人记忆的回答的效果：用了哪些记忆、用户反应说明 helpful/missed/corrected。不需要用户正式打分。", "inputSchema": {"type": "object", "properties": {"feedback_id": {"type": "string"}, "capture_id": {"type": "string"}, "memory_ids": {"type": "string"}, "outcome": {"type": "string", "enum": ["helpful", "missed", "corrected", "unclear"]}, "note": {"type": "string"}}, "required": ["feedback_id", "outcome"], "additionalProperties": False}},
-        {"name": "personal_session_check", "description": "回答或声称档案已更新前的硬闸门：turn receipt + capture 闭环 + 结构 + v2 完整性。个人 turn 必须传 turn_id，缺 capture 或 finalize 会失败。", "inputSchema": {"type": "object", "properties": {"turn_id": {"type": "string"}, "allow_warnings": {"type": "boolean", "default": False}}, "additionalProperties": False}},
+        {"name": "personal_preflight_turn", "description": "每轮入口：内容预检并持久化 turn receipt，判定本轮是否需要走个人档案流程（tier=auto/full/skip；light 已废弃按 full 处理）。个人材料轮此工具必须先于一切档案读写。", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}, "turn_id": {"type": "string"}, "conversation_id": {"type": "string"}, "tier": {"type": "string", "enum": ["auto", "full", "light", "skip"], "description": "auto=纯内容分类；full=完整档兜底；skip=强制跳过；light 已废弃按 full 处理"}}, "required": ["text"], "additionalProperties": False}},
+        {"name": "personal_catalog", "description": "全局勘察：survey（紧凑路由地图）/ routing（按领域展开）/ full（完整目录）。交互读取须先完成本轮 capture 并传 capture_id；maintenance=true 为审计只读降级。预算 survey 48K / routing 68K / full 96K 字符。", "inputSchema": {"type": "object", "properties": {"view": {"type": "string", "enum": ["survey", "routing", "full"], "default": "survey"}, "query": {"type": "string"}, "domain": {"type": "string", "description": "按 branch id 过滤（routing/full 有效）"}, "max_chars": {"type": "integer"}, "capture_id": {"type": "string"}, "maintenance": {"type": "boolean", "default": False}}, "required": [], "additionalProperties": False}},
+        {"name": "personal_retrieve", "description": "probe（按事件/实体/情境卡发散读派生卡片，80K 预算）/ deep（对选中条目读原话核验，100K 预算）。交互读取须先完成本轮 capture 并传 capture_id；maintenance=true 为审计只读降级。", "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "string"}}, "level": {"type": "string", "enum": ["probe", "deep"], "default": "probe"}, "query": {"type": "string"}, "max_chars": {"type": "integer"}, "capture_id": {"type": "string"}, "maintenance": {"type": "boolean", "default": False}}, "required": [], "additionalProperties": False}},
+        {"name": "personal_capture_user_turn", "description": "原样保存完整用户消息（不可变原话），绑定本轮 preflight receipt。没有 receipt 或 receipt 判非个人时拒绝写入；捕获后仍须派生并 finalize。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "turn_id": {"type": "string"}, "text": {"type": "string"}, "conversation_id": {"type": "string"}, "captured_at": {"type": "string"}, "message_kind": {"type": "string"}}, "required": ["capture_id", "turn_id", "text"], "additionalProperties": False}},
+        {"name": "personal_add_record", "description": "创建派生记录。来源是用户补充时必须先有 capture 并带 capture_id/verbatim_refs；禁止裸 current-conversation。足迹微型记录传 tier=light（salience 0-1）。因果假设用 kind=causal_hypothesis，summary 写 'claim || mechanism'。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": sorted(VALID_KINDS) + ["causal_hypothesis"]}, "domain": {"type": "string"}, "summary": {"type": "string"}, "tier": {"type": "string", "enum": ["full", "light"], "description": "记录形态：light=足迹微型记录（salience 0-1）；缺省 full。仅形态，非调用档位"}, "source_refs": {"type": "string"}, "verbatim_refs": {"type": "string"}, "capture_id": {"type": "string"}, "confidence": {"type": "string", "enum": sorted(VALID_CONFIDENCE), "default": "high"}, "sensitivity": {"type": "string", "enum": sorted(VALID_SENSITIVITY), "default": "ordinary"}, "related_ids": {"type": "string"}, "aliases": {"type": "string"}, "salience": {"type": "integer", "minimum": 0, "maximum": 3}, "phase": {"type": "string"}, "valid_from": {"type": ["string", "null"]}, "last_confirmed": {"type": ["string", "null"]}, "date_end": {"type": ["string", "null"]}, "date_precision": {"type": "string"}, "date_basis": {"type": "string"}, "entity_refs": {"type": "string"}, "record_role": {"type": "string"}}, "required": ["id", "kind", "summary"], "additionalProperties": False}},
+        {"name": "personal_finalize_capture", "description": "关闭一条 capture 的派生闭环：derived（须已有至少一条双向链接记录）或 no-derivation-needed（须写明查重命中的具体记录）。回答前必须逐条关闭。", "inputSchema": {"type": "object", "properties": {"capture_id": {"type": "string"}, "disposition": {"type": "string", "enum": ["derived", "no-derivation-needed"]}, "reason": {"type": "string"}}, "required": ["capture_id", "disposition"], "additionalProperties": False}},
+        {"name": "personal_add_followup", "description": "登记带上下文的待回访；到期后 Skill 主动检查。due_at 须为合法日历日期，相对说法换算成具体日期，不想定死就只写 due_rule。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "prompt": {"type": "string"}, "context": {"type": "string"}, "due_at": {"type": ["string", "null"]}, "due_rule": {"type": "string"}, "source_refs": {"type": "array", "items": {"type": "string"}}, "priority": {"type": "string", "enum": ["low", "normal", "high"], "default": "normal"}}, "required": ["id", "prompt", "context"], "additionalProperties": False}},
+        {"name": "personal_resolve_followup", "description": "关闭回访：answered（用户回复了）/ declined（不再跟进）/ resolved（被取代或过时）；note 必填且具体。用户回答是新原话时先 capture 再传 capture_id 绑定。", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "resolution": {"type": "string", "enum": ["answered", "declined", "resolved"]}, "note": {"type": "string"}, "capture_id": {"type": "string"}}, "required": ["id", "resolution", "note"], "additionalProperties": False}},
+        {"name": "personal_add_feedback", "description": "记录一次依赖个人记忆的回答效果：outcome=helpful/missed/corrected/unclear，附用了哪些记忆与用户反应证据。", "inputSchema": {"type": "object", "properties": {"feedback_id": {"type": "string"}, "capture_id": {"type": "string"}, "memory_ids": {"type": "string"}, "outcome": {"type": "string", "enum": ["helpful", "missed", "corrected", "unclear"]}, "note": {"type": "string"}}, "required": ["feedback_id", "outcome"], "additionalProperties": False}},
+        {"name": "personal_session_check", "description": "回答/声称档案已更新前的硬闸门。默认 light 模式（本轮 receipt+闭环+回访调度，毫秒级）；light=false 恢复全库结构校验（维护轮用）。个人轮必须传 turn_id；缺省自动审计最近 receipt。", "inputSchema": {"type": "object", "properties": {"turn_id": {"type": "string"}, "allow_warnings": {"type": "boolean", "default": False}, "stale_days": {"type": "integer", "default": 7}, "light": {"type": "boolean", "default": True, "description": "默认 true：只查本轮闸门；false=含全库 validate 的完整闸门"}}, "additionalProperties": False}},
+        {"name": "personal_validate", "description": "全库结构校验（clean/warnings/failed 三态），并内嵌 capture→records 派生闭环审计（derivation=embed，吸收原 personal_derivation_status）。维护轮/迁移验收用；只读。", "inputSchema": {"type": "object", "properties": {"strict": {"type": "boolean", "default": False}, "derivation": {"type": "boolean", "default": True, "description": "内嵌派生台账审计（pending/孤立捕获/链接漂移）"}}, "additionalProperties": False}},
     ]
 
 
@@ -90,9 +92,19 @@ def capture(data: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         meta_path.unlink(missing_ok=True); txt.unlink(missing_ok=True)
         return text_result(f"原话捕获失败，已撤销未完成文件：{exc}", error=True)
-    code, output = rebuild_and_validate()
-    result = {"status": "captured", "capture_id": capture_id, "turn_id": turn_id, "source_path": meta["source_path"], "sha256": digest, "derivation_status": "pending", "view_rebuild_and_validation": output, "validation_code": code, "next_required_action": "add derived records, then call personal_finalize_capture"}
-    return text_result(json.dumps(result, ensure_ascii=False, indent=2), error=code != 0)
+    # 2.7.0: isError now answers exactly one question — "did THIS write land?" —
+    # verified by targeted checks (file read-back happened inside the lock; here
+    # the ledger side). Inline rebuild+validate bundling is gone: under
+    # concurrency the validate subprocess raced other writers and reported
+    # successful captures as failures, which coerced blind retries and duplicate
+    # ids. View freshness is the read path's job (fresh_views_or_refuse); the
+    # whole-turn gate stays in session_check.
+    registered = discover_captures(ROOT).get(capture_id)
+    ledger_ok = bool(load_ledger(ROOT).get(capture_id))
+    if not registered or not ledger_ok:
+        return text_result(f"原话捕获失败：文件已写入但台账落位缺失（discover_captures={bool(registered)}，ledger={ledger_ok}）。不要用同一 capture_id 重试；先运行 personal_derivation_status 检查。", error=True)
+    result = {"status": "captured", "capture_id": capture_id, "turn_id": turn_id, "source_path": meta["source_path"], "sha256": digest, "derivation_status": "pending", "view_rebuild": "deferred（下次读取自动重建，2.7.0 起写入不再内联重建）", "next_required_action": "add derived records, then call personal_finalize_capture"}
+    return text_result(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def require_capture(data: dict[str, Any]) -> tuple[bool, str]:
@@ -130,46 +142,97 @@ def join_list_value(value: Any) -> str:
 def add_record(data: dict[str, Any]) -> dict[str, Any]:
     record_id = str(data.get("id", "")).strip(); kind = str(data.get("kind", "")).strip(); summary = str(data.get("summary", "")).strip(); confidence = str(data.get("confidence", "high")).strip(); sensitivity = str(data.get("sensitivity", "ordinary")).strip(); domain = str(data.get("domain", "")).strip(); tier = str(data.get("tier", "")).strip() or "full"; source_refs = [ref.strip() for ref in re.split(r"[;,]", str(data.get("source_refs", ""))) if ref.strip()]; verbatim_refs = [ref.strip() for ref in re.split(r"[;,]", str(data.get("verbatim_refs", ""))) if ref.strip()]; capture_id = str(data.get("capture_id", "")).strip()
     if not ID_RE.fullmatch(record_id): return text_result("拒绝写入：id 不合法。", error=True)
+    # 2.8.0 瘦身：kind=causal_hypothesis 是 add_record 的专用伪 kind（不进 VALID_KINDS，
+    # 避免 md 记录路径/validate_memory 接受它），在此先拦截路由到 hypotheses.jsonl。
+    if kind == "causal_hypothesis":
+        parts = [part.strip() for part in summary.split(" || ", 1)]
+        if not ID_RE.fullmatch(record_id): return text_result("拒绝写入：id 不合法。", error=True)
+        if len(parts) != 2 or not all(parts): return text_result("拒绝写入：kind=causal_hypothesis 的 summary 必须是 'claim || mechanism'（以 ' || ' 分隔）。", error=True)
+        hyp_confidence = confidence or "low"
+        if hyp_confidence not in VALID_CONFIDENCE: return text_result(f"拒绝写入：confidence 必须是 {'/'.join(sorted(VALID_CONFIDENCE))}，收到：{hyp_confidence}。", error=True)
+        return write_hypothesis(record_id, parts[0], parts[1], hyp_confidence, {"supports": [s for s in source_refs], "source_refs": source_refs})
     if kind not in VALID_KINDS or confidence not in VALID_CONFIDENCE or sensitivity not in VALID_SENSITIVITY: return text_result("拒绝写入：kind / confidence / sensitivity 不合法。", error=True)
     if tier not in {"full", "light"}: return text_result("拒绝写入：tier 只能是 full 或 light。", error=True)
     if not summary: return text_result("拒绝写入：summary 不能为空。", error=True)
-    if tier == "light" and int(data.get("salience", 1) or 1) > 1: return text_result("拒绝写入：活动足迹微型记录（tier=light）的 salience 不得超过 1。", error=True)
+    # 2.7.0: salience is range-checked at write time for BOTH tiers — the old code
+    # only guarded tier=light, so salience: 99 sailed into full records while
+    # downstream clamped/ignored it silently; int() garbage became a raw -32603.
+    raw_salience = data.get("salience")
+    salience: int | None = None
+    if raw_salience not in (None, ""):
+        try:
+            salience = int(raw_salience)
+        except (TypeError, ValueError):
+            return text_result(f"拒绝写入：salience 必须是 0-{3} 的整数，收到：{raw_salience}。", error=True)
+        if not 0 <= salience <= 3: return text_result(f"拒绝写入：salience 超出 0-3，收到：{salience}。", error=True)
+    if tier == "light" and (salience if salience is not None else 1) > 1: return text_result("拒绝写入：活动足迹微型记录（tier=light）的 salience 不得超过 1。", error=True)
     if kind in {"state", "decision", "model", "value", "heuristic", "rule", "preference"} and not domain: return text_result(f"拒绝写入：{kind} 类型必须提供 domain。", error=True)
+    # 2.7.0: write-path validation now mirrors validate_memory exactly (schema.py).
+    # "learning" used to be accepted here and rejected by the auditor — a record
+    # born already invalid ("写入即废"); the legal branch ids are listed on refusal.
+    legal_domains = branch_ids(ROOT)
+    if domain and domain not in legal_domains:
+        return text_result(f"拒绝写入：未知 domain：{domain}。合法值是 memory/branches 的 branch id：{'、'.join(sorted(legal_domains))}。", error=True)
+    for date_field in ("valid_from", "last_confirmed", "date_end"):
+        date_value = data.get(date_field)
+        if date_value not in (None, "") and not valid_date_string(date_value):
+            return text_result(f"拒绝写入：{date_field} 必须是 {DATE_FORMAT_HINT} 的合法日历日期，收到：{date_value}。", error=True)
+    captures_index = discover_captures(ROOT)
     if capture_id:
-        capture_meta = discover_captures(ROOT).get(capture_id)
+        capture_meta = captures_index.get(capture_id)
         if not capture_meta: return text_result("拒绝写入：capture_id 不存在；先保存原话或附件。", error=True)
         source_path = str(capture_meta.get("source_path") or "").strip()
         if source_path: source_refs.append(source_path)
         verbatim_refs.append(f"fragment.capture.{capture_id}")
     if "current-conversation" in source_refs and not verbatim_refs: return text_result("拒绝写入：current-conversation 不能代替原话；必须提供 capture_id 或 verbatim_refs。", error=True)
-    path = RECORDS / f"{record_id}.md"
-    today = dt.date.today().isoformat(); valid_from = data.get("valid_from"); last_confirmed = data.get("last_confirmed") or today
-    lines = ["---", f"id: {record_id}", f"kind: {kind}", "status: current", f"confidence: {confidence}", f"sensitivity: {sensitivity}", f"tier: {tier}"]
-    if valid_from not in (None, ""): lines.append(f"valid_from: {valid_from}")
-    if last_confirmed not in (None, ""): lines.append(f"last_confirmed: {last_confirmed}")
-    if domain: lines.extend([f"domain: {domain}", f"parent_ids: {domain}"])
-    for key in ("salience", "phase", "date_end", "date_precision", "date_basis", "entity_refs", "record_role"):
-        value = join_list_value(data.get(key))
-        if value not in (None, ""):
-            lines.append(f"{key}: {value}")
-    for key in ("related_ids", "aliases"):
-        value = join_list_value(data.get(key))
-        if value: lines.append(f"{key}: {value}")
-    if source_refs: lines.append("source_refs: " + "; ".join(dict.fromkeys(source_refs)))
-    if verbatim_refs: lines.append("verbatim_refs: " + "; ".join(dict.fromkeys(verbatim_refs)))
-    lines.extend(["schema_version: 2.0.0", "---", "", summary, ""])
     linked_capture_ids = set()
     if capture_id: linked_capture_ids.add(capture_id)
     for ref in verbatim_refs:
         if ref.startswith("fragment.capture."): linked_capture_ids.add(ref.removeprefix("fragment.capture."))
-    with mutation_lock(ROOT):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists(): return text_result(f"拒绝覆盖已有记录：{path.name}。", error=True)
-        atomic_write_text(path, "\n".join(lines))
-        for linked_capture_id in linked_capture_ids:
-            link_record(linked_capture_id, record_id, root=ROOT)
-    code, output = rebuild_and_validate()
-    return text_result(f"已创建：{path.name}；关联 capture：{', '.join(sorted(linked_capture_ids)) or '无'}。capture 仍为 pending，完成本轮全部拆分后必须 finalize。\n\n{output}", error=code != 0)
+    # 2.7.0 atomicity: every capture reference is verified BEFORE anything is
+    # written. The old order wrote the record file first and dereferenced
+    # verbatim_refs during link_record — a bogus ref left an orphan record on
+    # disk while the caller saw an RPC error, and the id was then stuck
+    # ("拒绝覆盖已有记录") on retry.
+    unknown_captures = sorted(cid for cid in linked_capture_ids if cid not in captures_index)
+    if unknown_captures:
+        return text_result(f"拒绝写入：verbatim_refs 指向不存在的 capture：{', '.join(unknown_captures)}；先保存原话或修正引用。", error=True)
+    path = RECORDS / f"{record_id}.md"
+    today = dt.date.today().isoformat(); valid_from = data.get("valid_from"); last_confirmed = data.get("last_confirmed") or today
+    created = False
+    try:
+        with mutation_lock(ROOT):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists(): return text_result(f"拒绝覆盖已有记录：{path.name}。", error=True)
+            payload = "\n".join(["---", f"id: {record_id}", f"kind: {kind}", "status: current", f"confidence: {confidence}", f"sensitivity: {sensitivity}", f"tier: {tier}"])
+            if valid_from not in (None, ""): payload += f"\nvalid_from: {valid_from}"
+            if last_confirmed not in (None, ""): payload += f"\nlast_confirmed: {last_confirmed}"
+            if domain: payload += f"\ndomain: {domain}\nparent_ids: {domain}"
+            for key in ("salience", "phase", "date_end", "date_precision", "date_basis", "entity_refs", "record_role"):
+                value = join_list_value(data.get(key))
+                if value not in (None, ""):
+                    payload += f"\n{key}: {value}"
+            for key in ("related_ids", "aliases"):
+                value = join_list_value(data.get(key))
+                if value: payload += f"\n{key}: {value}"
+            if source_refs: payload += "\nsource_refs: " + "; ".join(dict.fromkeys(source_refs))
+            if verbatim_refs: payload += "\nverbatim_refs: " + "; ".join(dict.fromkeys(verbatim_refs))
+            payload += "\nschema_version: 2.0.0\n---\n\n" + summary + "\n"
+            atomic_write_text(path, payload); created = True
+            if path.read_text(encoding="utf-8") != payload: raise RuntimeError("记录回读校验失败")
+            for linked_capture_id in sorted(linked_capture_ids):
+                link_record(linked_capture_id, record_id, root=ROOT)
+    except Exception as exc:
+        if created:
+            path.unlink(missing_ok=True)
+            try: repair_ledger(ROOT)
+            except Exception: pass
+        return text_result(f"拒绝写入：记录已回滚（{exc}）。", error=True)
+    ledger = load_ledger(ROOT)
+    unlinked = [cid for cid in sorted(linked_capture_ids) if record_id not in (ledger.get(cid, {}).get("record_ids") or [])]
+    if unlinked:
+        return text_result(f"记录已写入但台账链接缺失：{', '.join(unlinked)}；请运行 personal_derivation_status 检查后再补链。", error=True)
+    return text_result(f"已创建：{path.name}；关联 capture：{', '.join(sorted(linked_capture_ids)) or '无'}。capture 仍为 pending，完成本轮全部拆分后必须 finalize。视图将在下次读取时自动重建（2.7.0）。")
 
 
 
@@ -179,14 +242,19 @@ def finalize_capture_tool(data: dict[str, Any]) -> dict[str, Any]:
         entry = finalize_capture(capture_id, disposition, reason, root=ROOT)
     except ValueError as exc:
         return text_result(f"拒绝关闭 capture：{exc}", error=True)
-    # finalize 只改派生台账，不影响任何 v2 派生视图；只需校验，不必全量重建。
-    # 这里刻意不带 --require-closed-captures：多 capture 轮（正文+附件）里兄弟 capture 尚未关闭
-    # 是流程中态，不能把"本轮还没关完"误报成本工具失败；轮级闭环由 session_check 统一把关。
-    code, output = run_script("validate_memory.py", [])
-    pending = output.get("derivation", {}).get("pending_capture_ids", []) if isinstance(output, dict) else []
-    payload = {"status": "finalized", "capture": entry, "validation": output, "pending_captures": pending}
-    if pending: payload["note"] = "pending captures are expected mid-turn; close them, then run session_check before answering"
-    return text_result(json.dumps(payload, ensure_ascii=False, indent=2), error=code != 0)
+    # 2.7.0: pending captures are read straight from the ledger audit — the old
+    # code ran validate_memory without --json and called .get() on its *string*
+    # output, so pending_captures was always [] and the mid-turn reminder never
+    # fired. Finalize only mutates the ledger; sibling captures still open is a
+    # normal mid-turn state (the whole-turn gate is session_check), so the audit
+    # result rides along as information, never as this tool's error flag.
+    audit = audit_ledger(ROOT)
+    payload: dict[str, Any] = {"status": "finalized", "capture": entry, "ledger": {"status": audit["status"], "errors": audit["errors"], "warnings": audit["warnings"]}, "pending_captures": audit["pending_capture_ids"]}
+    if audit["pending_capture_ids"]:
+        payload["note"] = "本轮还有未闭环 capture（多 capture 轮属正常中态）；全部关闭后先跑 personal_session_check 再回答"
+    if entry.get("already_closed"):
+        payload["note"] = "该 capture 已按相同 disposition 关闭过，本次为幂等重入，台账未变更"
+    return text_result(json.dumps(payload, ensure_ascii=False, indent=2))
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -207,19 +275,25 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 def add_followup(data: dict[str, Any]) -> dict[str, Any]:
     ident = str(data.get("id", "")).strip(); prompt = str(data.get("prompt", "")).strip(); context = str(data.get("context", "")).strip()
     if not ID_RE.fullmatch(ident) or not prompt or not context: return text_result("拒绝写入：followup id、prompt、context 必填且合法。", error=True)
+    # 2.7.0: "下个月吧" used to be stored verbatim as due_at, parse_day silently
+    # bucketed the row as undated, and the followup never fired — a reminder
+    # black hole. Either a real calendar date, or an explicit due_rule with no
+    # date at all; anything in between is refused at the door.
+    due_at = data.get("due_at")
+    if due_at not in (None, "") and not valid_date_string(due_at):
+        return text_result(f"拒绝写入：due_at 必须是 {DATE_FORMAT_HINT} 的合法日期，收到：{due_at}。相对说法请换算成具体日期；不想定死日期就只写 due_rule（如 next-relevant-activation），不要传 due_at。", error=True)
     path = V2 / "followups.jsonl"
     with mutation_lock(ROOT):
         rows = read_jsonl(path)
         if any(row.get("id") == ident for row in rows): return text_result("拒绝覆盖已有 followup。", error=True)
-        rows.append({"id": ident, "prompt": prompt, "context": context, "status": "pending", "due_at": data.get("due_at"), "due_rule": data.get("due_rule") or "next-relevant-activation", "source_refs": data.get("source_refs") or [], "created_at": dt.date.today().isoformat(), "last_checked_at": None, "snooze_until": None, "priority": data.get("priority") or "normal"})
+        rows.append({"id": ident, "prompt": prompt, "context": context, "status": "pending", "due_at": due_at if due_at not in (None, "") else None, "due_rule": data.get("due_rule") or "next-relevant-activation", "source_refs": data.get("source_refs") or [], "created_at": dt.date.today().isoformat(), "last_checked_at": None, "snooze_until": None, "priority": data.get("priority") or "normal"})
         payload = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in sorted(rows, key=lambda row: row["id"]))
         write_text_atomic(path, payload)
-    code, output = rebuild_and_validate()
     # Policy wants every followup to carry source refs and an expiry rule; remind on
     # the way out instead of refusing the write (audit-only stance, hard constraint #1).
     missing_fields = loose_followup_fields(data)
     reminder = f"\n\n提醒：本条缺 {'、'.join(missing_fields)}；回访政策要求每条必带来源与到期规则，下次登记请补全。" if missing_fields else ""
-    return text_result(f"已登记待回访：{ident}{reminder}\n\n{output}", error=code != 0)
+    return text_result(f"已登记待回访：{ident}{reminder}")
 
 
 def resolve_followup_tool(data: dict[str, Any]) -> dict[str, Any]:
@@ -228,23 +302,29 @@ def resolve_followup_tool(data: dict[str, Any]) -> dict[str, Any]:
         closed = resolve_followup(ident, resolution=str(data.get("resolution", "")).strip(), note=str(data.get("note", "")).strip(), capture_id=str(data.get("capture_id", "")).strip())
     except ValueError as exc:
         return text_result(f"拒绝关闭回访：{exc}", error=True)
-    code, output = rebuild_and_validate()
     bound = f"\n已绑定用户回答原话 capture：{closed['answer_capture_id']}" if closed.get("answer_capture_id") else ""
-    return text_result(f"已关闭回访：{ident}（{closed['status']}）{bound}\n\n{output}", error=code != 0)
+    return text_result(f"已关闭回访：{ident}（{closed['status']}）{bound}")
 
 
 def add_hypothesis(data: dict[str, Any]) -> dict[str, Any]:
     ident = str(data.get("id", "")).strip(); claim = str(data.get("claim", "")).strip(); mechanism = str(data.get("mechanism", "")).strip()
     if not ID_RE.fullmatch(ident) or not claim or not mechanism: return text_result("拒绝写入：hypothesis id、claim、mechanism 必填且合法。", error=True)
+    hypothesis_confidence = str(data.get("confidence") or "low").strip()
+    if hypothesis_confidence not in VALID_CONFIDENCE:
+        return text_result(f"拒绝写入：confidence 必须是 {'/'.join(sorted(VALID_CONFIDENCE))}，收到：{hypothesis_confidence}。", error=True)
+    return write_hypothesis(ident, claim, mechanism, hypothesis_confidence, data)
+
+
+def write_hypothesis(ident: str, claim: str, mechanism: str, confidence: str, data: dict[str, Any]) -> dict[str, Any]:
     path = V2 / "hypotheses.jsonl"
     with mutation_lock(ROOT):
         rows = read_jsonl(path)
         if any(row.get("id") == ident for row in rows): return text_result("拒绝覆盖已有 hypothesis。", error=True)
-        row = {"id": ident, "kind": "causal_hypothesis", "status": "candidate", "claim": claim, "mechanism": mechanism, "supports": data.get("supports") or [], "contradicts": data.get("contradicts") or [], "alternatives": data.get("alternatives") or [], "scope": data.get("scope") or "", "confidence": data.get("confidence") or "low", "source_refs": data.get("source_refs") or [], "created_at": dt.date.today().isoformat(), "last_reviewed_at": None}
+        row = {"id": ident, "kind": "causal_hypothesis", "status": "candidate", "claim": claim, "mechanism": mechanism, "supports": data.get("supports") or [], "contradicts": data.get("contradicts") or [], "alternatives": data.get("alternatives") or [], "scope": data.get("scope") or "", "confidence": confidence, "source_refs": data.get("source_refs") or [], "created_at": dt.date.today().isoformat(), "last_reviewed_at": None}
         rows.append(row)
         payload = "".join(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n" for item in sorted(rows, key=lambda item: item["id"]))
         write_text_atomic(path, payload)
-    code, output = rebuild_and_validate(); return text_result(f"已登记候选因果假设：{ident}\n\n{output}", error=code != 0)
+    return text_result(f"已登记候选因果假设：{ident}")
 
 
 UNKNOWN_METHOD = object()
@@ -257,6 +337,8 @@ def handle(method: str, params: dict[str, Any]) -> Any:
     if method == "resources/read":
         uri = str(params.get("uri", ""))
         if uri == "personal://catalog/survey":
+            failed = fresh_views_or_refuse()
+            if failed: raise RuntimeError(failed)
             code, output = run_script("catalog_context.py", ["--view", "survey", "--maintenance"]); return {"contents": [{"uri": uri, "mimeType": "application/json", "text": output}]} if not code else (_ for _ in ()).throw(RuntimeError(output))
         if uri == "personal://skill/info": return {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": (ROOT / "SKILL.md").read_text(encoding="utf-8")}]} 
         raise ValueError(f"未知资源：{uri}")
@@ -286,27 +368,39 @@ def handle(method: str, params: dict[str, Any]) -> Any:
         if name == "personal_catalog":
             ok, message, maintenance = read_gate(args)
             if not ok: return text_result(message, error=True)
+            failed = fresh_views_or_refuse()
+            if failed: return text_result(failed, error=True)
             view = str(args.get("view", "survey"));
             if view not in {"survey", "routing", "full"}: return text_result("view 不合法。", error=True)
             cmd = ["--view", view, "--capture-id", str(args.get("capture_id", "")).strip()];
             if maintenance: cmd += ["--maintenance"]
             if args.get("query"): cmd += ["--query", str(args["query"])]
+            if args.get("domain"): cmd += ["--domain", str(args["domain"])]
+            if args.get("max_chars"): cmd += ["--max-chars", str(args["max_chars"])]
             code, output = run_script("catalog_context.py", cmd); return text_result(output, error=bool(code))
         if name == "personal_retrieve":
             ok, message, maintenance = read_gate(args)
             if not ok: return text_result(message, error=True)
+            failed = fresh_views_or_refuse()
+            if failed: return text_result(failed, error=True)
             ids = args.get("ids") or []; query = str(args.get("query", "")); level = str(args.get("level", "probe")); cmd = ["--level", level, "--capture-id", str(args.get("capture_id", "")).strip()]
             if maintenance: cmd += ["--maintenance"]
             if ids: cmd += ["--event-ids", ",".join(str(item) for item in ids), "--entity-ids", ",".join(str(item) for item in ids)]
             if query: cmd += ["--query", query]
+            if args.get("max_chars"): cmd += ["--max-chars", str(args["max_chars"])]
             code, output = run_script("retrieve_v2.py", cmd); return text_result(output, error=bool(code))
         if name == "personal_capture_user_turn": return capture(args)
         if name == "personal_add_record": return add_record(args)
         if name == "personal_finalize_capture": return finalize_capture_tool(args)
-        if name == "personal_derivation_status": return text_result(json.dumps(audit_ledger(ROOT), ensure_ascii=False, indent=2))
+        # 2.8.0 瘦身：personal_derivation_status 已并入 personal_validate；此处拦截
+        # 仅作迁移期指针（直接 302 语义而非静默吞掉），一个发布周期后删除本分支。
+        if name == "personal_derivation_status":
+            return text_result("personal_derivation_status 已于 2.8.0 并入 personal_validate：闭环状态（pending/孤立捕获/链接漂移）即其 derivation 段。", error=True)
         if name == "personal_add_followup": return add_followup(args)
         if name == "personal_resolve_followup": return resolve_followup_tool(args)
-        if name == "personal_add_hypothesis": return add_hypothesis(args)
+        # 2.8.0 瘦身：personal_add_hypothesis 已并入 personal_add_record（kind=causal_hypothesis）。迁移期指针，一个发布周期后删除。
+        if name == "personal_add_hypothesis":
+            return text_result("personal_add_hypothesis 已于 2.8.0 并入 personal_add_record：用 kind=causal_hypothesis，summary 写 'claim || mechanism'（以 ' || ' 分隔），confidence 取 low/medium/high；supports/contradicts/alternatives/scope 走 source_refs/related_ids 标注。", error=True)
         if name == "personal_add_feedback":
             cmd = ["--feedback-id", str(args.get("feedback_id", "")), "--outcome", str(args.get("outcome", ""))]
             if args.get("capture_id"): cmd += ["--capture-id", str(args["capture_id"])]
@@ -314,10 +408,37 @@ def handle(method: str, params: dict[str, Any]) -> Any:
             if args.get("note"): cmd += ["--note", str(args["note"])]
             code, output = run_script("record_feedback.py", cmd); return text_result(output, error=bool(code))
         if name == "personal_session_check":
+            # 2.7.0: exit 2 (warnings-only) no longer maps to isError — warnings are
+            # "usable but must be reported", and the output text carries them; only a
+            # hard fail (exit 1) is an error result. session_check.py itself now
+            # audits the LATEST receipt when turn_id is omitted, so the turn gate can
+            # no longer be bypassed by forgetting the argument.
+            # 2.8.0: default light mode — turn gate + pending + followups, skipping
+            # the full-library validate subprocess (seconds -> ms). Pass light=false
+            # for the old full gate (maintenance rounds / migration acceptance).
             cmd = ["session_check.py"] + (["--turn-id", str(args["turn_id"])] if args.get("turn_id") else []) + (["--allow-warnings"] if args.get("allow_warnings") else [])
-            code, output = run_script(cmd[0], cmd[1:]); return text_result(output, error=bool(code))
+            # 2.7.0: `if args.get(...)` would swallow stale_days=0 — a legitimate
+            # value ("everything pending counts as stale"). Only an ABSENT key
+            # falls back to the script default.
+            if args.get("stale_days") is not None: cmd += ["--stale-days", str(args["stale_days"])]
+            if args.get("light", True): cmd += ["--light"]
+            code, output = run_script(cmd[0], cmd[1:]); return text_result(output, error=(code == 1))
         if name == "personal_validate":
-            cmd = ["--json", "--require-closed-captures"] + (["--strict"] if args.get("strict") else []); code, output = run_script("validate_memory.py", cmd); return text_result(output, error=bool(code))
+            # 2.8.0: absorbs derivation_status — derivation=embed appends the
+            # capture→records ledger audit (pending / orphan / link drift) to the
+            # structural validation payload.
+            failed = fresh_views_or_refuse()
+            if failed: return text_result(failed, error=True)
+            cmd = ["--json", "--require-closed-captures"] + (["--strict"] if args.get("strict") else []); code, output = run_script("validate_memory.py", cmd)
+            if args.get("derivation", True):
+                try:
+                    payload = json.loads(output) if isinstance(output, str) else output
+                    if isinstance(payload, dict):
+                        payload["derivation_ledger_audit"] = audit_ledger(ROOT)
+                        output = json.dumps(payload, ensure_ascii=False, indent=2)
+                except (json.JSONDecodeError, TypeError):
+                    output = f"{output}\n\n[derivation_ledger_audit]\n" + json.dumps(audit_ledger(ROOT), ensure_ascii=False, indent=2)
+            return text_result(output, error=bool(code))
         return text_result(f"未知工具：{name}", error=True)
     return UNKNOWN_METHOD
 
@@ -334,6 +455,11 @@ def main() -> None:
                     print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32601, "message": f"未知方法：{method}"}}, ensure_ascii=False), flush=True)
                 continue
             if "id" in msg: print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}, ensure_ascii=False), flush=True)
+        except TimeoutError as exc:
+            # Lock starvation is a clean, retryable refusal — not a protocol error.
+            # As -32603 it looked like a server crash and invited blind retries.
+            if isinstance(msg, dict) and "id" in msg:
+                print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"content": [{"type": "text", "text": f"写锁等待超时，档案正被其他进程占用：{exc}。请稍后重试。"}], "isError": True}}, ensure_ascii=False), flush=True)
         except Exception as exc:
             if isinstance(msg, dict) and "id" in msg: print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "error": {"code": -32603, "message": str(exc)}}, ensure_ascii=False), flush=True)
 

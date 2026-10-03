@@ -29,3 +29,7 @@ build/
 dist/
 *.whl
 *.tar.gz
+
+# Local-only ops files (machine paths / real-archive gold)
+scripts/daily-backup.cmd
+gen-baseline-*.json

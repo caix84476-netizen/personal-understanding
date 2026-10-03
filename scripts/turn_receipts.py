@@ -10,7 +10,7 @@ from storage import atomic_write_text, mutation_lock
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]+$")
 EXPLICIT = ("记住", "归档", "存下来", "个人理解", "我的档案", "我为什么会", "我怎么会这样")
-MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天", "昨天", "玩到", "看完", "遇到", "感觉", "感到", "觉得", "害怕", "恶心", "难过", "开心", "焦虑", "生气", "委屈", "思考", "喜欢", "讨厌", "偏好", "决定", "选择", "拒绝", "后悔", "朋友", "家人", "同学", "老师", "学校", "工作", "身体", "恋爱", "父母", "自己", "室友", "吵架", "分手", "痘痘", "好丧", "很丧", "挺丧", "emo", "低落")
+MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天", "昨天", "玩到", "看完", "遇到", "感觉", "感到", "觉得", "害怕", "恶心", "难过", "开心", "焦虑", "生气", "委屈", "思考", "喜欢", "讨厌", "偏好", "决定", "选择", "拒绝", "后悔", "朋友", "家人", "同学", "老师", "学校", "工作", "身体", "恋爱", "父母", "自己", "室友", "吵架", "分手", "痘痘", "好丧", "很丧", "挺丧", "emo", "低落", "失落", "迷茫", "后怕", "心慌", "无奈")  # 2.7.0 补第二实测漏批：挺失落的/有点迷茫/后怕（期末后怕全句）/心慌
 # STRONG_MARKERS fire without a first-person pronoun (2.5.0 §8): Chinese routinely
 # drops the subject ("最近状态不太好", "下巴冒痘了挺烦"), and the old first-AND-marker
 # rule missed exactly the抒情感慨/状态更新 turns the two-tier design most wants.
@@ -19,8 +19,13 @@ MARKERS = ("经历", "发生", "以前", "后来", "当时", "最近", "今天",
 # that double as tech jargon stay OUT (a missed low-signal turn is recoverable via
 # the tier=full declaration + §8.1 upgrade path; a tech turn forced into capture is
 # churn the user feels every session).
-STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦", "emo", "低落", "郁闷", "崩溃", "疲惫", "很丧", "好丧", "有点丧", "挺丧", "丧得", "堵得慌", "心里堵", "憋屈", "心里闷", "心累", "好累啊", "撑不住", "尴尬", "难为情", "社死", "丢人", "羞耻", "不是滋味", "诸事不顺")  # 词表法已到头的诚实边界见 SKILL 低信号节  # 低信号情感第二补充批：g03 实测"心里堵得慌"漏判后加；心累依赖 TECHNICAL 否决（写代码写得心累=技术轮）  # 丧 须多字形态："丧尸"是游戏名词（实测误触发足迹轮）
-TECHNICAL = ("python", "javascript", "typescript", "代码", "配置", "报错", "bug", "mcp", "插件", "仓库", "git", "接口", "数据库", "部署")
+STRONG_MARKERS = ("难过", "焦虑", "委屈", "害怕", "后悔", "失眠", "烦躁", "心烦", "压抑", "孤独", "自卑", "难受", "心情", "情绪", "想哭", "哭了", "烦死", "好烦", "挺烦", "超烦", "有点烦", "很烦", "烦得", "emo", "低落", "郁闷", "崩溃", "疲惫", "很丧", "好丧", "有点丧", "挺丧", "丧得", "堵得慌", "心里堵", "憋屈", "心里闷", "心累", "好累啊", "撑不住", "尴尬", "难为情", "社死", "丢人", "羞耻", "不是滋味", "诸事不顺", "失落", "迷茫", "后怕", "心慌", "好悬", "很悬", "有点悬", "提心吊胆")  # 词表法已到头的诚实边界见 SKILL 低信号节  # 低信号情感第二补充批：g03 实测"心里堵得慌"漏判后加；心累依赖 TECHNICAL 否决（写代码写得心累=技术轮）  # 丧/烦 须多字形态："丧尸"是游戏名词（实测误触发足迹轮）；裸"烦"子串命中"麻烦"（实测"这样有点麻烦""麻烦帮我看下json"误触发，2.7.0 修复；冻结金标"挺烦/有点烦"保留多字形态）  # 2.7.0 第三批：失落/迷茫/后怕/悬系 实测漏判词
+TECHNICAL = ("python", "javascript", "typescript", "代码", "配置", "报错", "bug", "mcp", "插件", "仓库", "git", "接口", "数据库", "部署", "json", "api", "sql", "docker", "服务器", "命令", "脚本", "函数", "正则")
+
+# WEAK_MARKERS 是 MARKERS 里的"斟酌/态度"词——技术行文出现频率极高
+# （"我觉得这个方案不行""我决定用docker部署"），单独命中不足以判个人轮。
+# 强情绪词（害怕/难过/崩溃…）不受技术否决，与 STRONG 分支的既有政策对称。
+WEAK_MARKERS = ("感觉", "感到", "觉得", "思考", "决定", "选择", "拒绝", "偏好", "无奈")
 
 # 2.6.1 §4d: open morphological slot for affect shapes the closed vocabulary cannot
 # enumerate (X得慌 productive frame). Deliberately narrow — measured: 「好难」 also fits
@@ -55,7 +60,15 @@ def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
     compact = " ".join(text.split()); reasons: list[str] = []
     if any(x in compact for x in EXPLICIT): reasons.append("explicit-memory-or-self-understanding-request")
     first = bool(re.search(r"我|本人|自己|咱们?", compact))
-    if first and any(x in compact for x in MARKERS): reasons.append("first-person-experience-or-state")
+    tech_hit = any(x in compact.casefold() for x in TECHNICAL)
+    # 2.7.0: the first-person branch gets the same technical-context guard the
+    # STRONG branch always had — scoped to WEAK markers (觉得/决定/选择-style
+    # deliberation words tech prose uses constantly, e.g. "我觉得这个方案不行").
+    # When at least one strong marker also hits (害怕/难过/崩溃/失落…), the affect
+    # word wins and the veto does not apply — same trust-the-affect-word policy
+    # the STRONG branch encodes.
+    strong_first = any(x in compact and x not in WEAK_MARKERS for x in MARKERS)
+    if first and any(x in compact for x in MARKERS) and not (tech_hit and not strong_first): reasons.append("first-person-experience-or-state")
     # STRONG_MARKERS fire WITHOUT requiring a dropped subject (2.5.0 §8, 2.6.1 §4d):
     # Chinese drops the subject ("最近状态不太好"), so the rule must work with and
     # without 我 — but the old `elif not first` gate made the whole STRONG layer blind
@@ -65,8 +78,8 @@ def classify_personal_turn(text: str, tier: str = "auto") -> dict[str, Any]:
     # "四连漏 vocabulary exhaustion" diagnosis was mostly this structural gate.
     # Technical-context guard unchanged: a STRONG hit is vetoed when the turn also
     # carries a TECHNICAL token, so "这个 bug 让我很崩溃"/"写代码写得心累" stay technical.
-    elif any(x in compact for x in STRONG_MARKERS) and not any(x in compact.casefold() for x in TECHNICAL) \
-            or (not any(x in compact.casefold() for x in TECHNICAL) and _AFFECT_SHAPE.search(compact)):
+    elif any(x in compact for x in STRONG_MARKERS) and not tech_hit \
+            or (not tech_hit and _AFFECT_SHAPE.search(compact)):
         reasons.append("affective-or-state-without-subject" if not first else "first-person-affect-word")
     if re.search(r"我.{0,12}(为什么|怎么会|是不是).{0,18}(这样|的人|性格|状态)", compact): reasons.append("self-explanation-request")
     required = bool(reasons) or tier == "full"

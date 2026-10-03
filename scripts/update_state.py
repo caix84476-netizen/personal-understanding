@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 
 from source_audit import audit_records
+from derivation_ledger import discover_captures
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,10 +58,21 @@ def main() -> int:
         raise SystemExit(f"Only {('/'.join(sorted(VERSIONABLE_KINDS)))} records can be versioned by this command: {old.get('kind')}")
     # Hard gate: the source of a new state version must resolve to a real
     # capture or file. "Just write it" is how unanchored drift starts.
-    source_resolved = (ROOT / args.source).exists()
+    # 2.7.0: a capture id ("capture.*" or its verbatim-ref form
+    # "fragment.capture.*") is a first-class source — resolve it to the
+    # capture's real source_path instead of demanding a hand-copied path that
+    # never exists on disk. The raw form is only resolved when it doesn't
+    # already name a real file.
+    source = args.source.strip()
+    if not (ROOT / source).exists():
+        capture_meta = discover_captures(ROOT).get(source.removeprefix("fragment.capture."))
+        resolved = str((capture_meta or {}).get("source_path") or "").strip()
+        if resolved:
+            source = resolved
+    source_resolved = (ROOT / source).exists()
     if not source_resolved and not args.allow_unresolved_source:
         raise SystemExit(
-            f"Write blocked: source does not exist: {args.source}. Save the verbatim capture or attachment first with "
+            f"Write blocked: source does not exist: {source}. Save the verbatim capture or attachment first with "
             "capture_user_update.py / capture_attachment.py, or use --allow-unresolved-source for an explicit historical migration."
         )
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -72,7 +84,7 @@ def main() -> int:
             carried.append(f"{field}: {old[field]}")
     carried_text = ("\n" + "\n".join(carried)) if carried else ""
     kind = old.get("kind") or "state"
-    content = f"""---\nid: {new_id}\nkind: {kind}\nvalid_from: {args.valid_from or datetime.now().date().isoformat()}\nlast_confirmed: {datetime.now().date().isoformat()}\nstatus: current\nconfidence: {args.confidence}\nsensitivity: {old.get('sensitivity', 'private')}\nsource_refs: {args.source}\nsupersedes: {args.id}{carried_text}\n---\n\n{args.content}\n"""
+    content = f"""---\nid: {new_id}\nkind: {kind}\nvalid_from: {args.valid_from or datetime.now().date().isoformat()}\nlast_confirmed: {datetime.now().date().isoformat()}\nstatus: current\nconfidence: {args.confidence}\nsensitivity: {old.get('sensitivity', 'private')}\nsource_refs: {source}\nsupersedes: {args.id}{carried_text}\n---\n\n{args.content}\n"""
     issue = next((item for item in audit_records() if item["id"] == args.id), None)
     if args.apply and issue and not args.allow_unresolved_source:
         raise SystemExit(

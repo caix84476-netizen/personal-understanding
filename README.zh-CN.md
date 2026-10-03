@@ -193,7 +193,7 @@ python scripts/pipeline_view.py --latest 5
 
 ## 状态
 
-- **当前版本：v2.6.1**——泛化审计轮：联想通道投影修复、词面时间相关性（180 天半衰期、无日期中性）、superseded 降权、分类器第一人称情感修复；两档调用带足迹纪律；schema 稳定（`memory/v2/` v2.0.0）；持续维护。同步发布于 [PyPI](https://pypi.org/project/personal-understanding/)。
+- **当前版本：v2.8.0**——瘦身轮：SKILL.md 44KB→20KB 核心契约（细则索引到 references 按需加载），MCP 工具 13→11（derivation_status 并入 validate、add_hypothesis 并入 add_record kind=causal_hypothesis，均留迁移期指针），session_check 默认 light 模式（本轮闸门毫秒级，全库校验 light=false 恢复）。schema 稳定；行为契约不变。：写入不再内联重建（isError 只回答"本次写入是否落位"，视图改为读取时保鲜重建），五类读取全部带确定性截断元数据的尺寸预算，finalize 改判护栏 + pending 真实可见，写入 schema 与审计对齐，会话闸门历史遗留降级；新试卷验收另抓出并修掉三个真缺陷（读路径重建死锁、stale_days=0 被吞、结构闸门短路降级）。schema 稳定（`memory/v2/` v2.0.0）；持续维护。同步发布于 [PyPI](https://pypi.org/project/personal-understanding/)。
 - 兼容任何支持 MCP 的客户端。技能大脑（`SKILL.md`）以中文写成，档案可用任何语言；检索针对中英混排调优，其他语言优雅降级。
 - 路线图：可编辑面板页、更丰富的冷回溯排序、面向超大档案的可选向量旁路（按可插拔设计）、可选的静态加密档案。
 

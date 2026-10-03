@@ -72,6 +72,12 @@ def main() -> int:
         raise SystemExit("Invalid feedback-id.")
     if any(row.get("id") == args.feedback_id for row in rows):
         raise SystemExit(f"Refusing to overwrite existing feedback: {args.feedback_id}")
+    if args.capture_id:
+        # Same integrity rule as resolve_followup: a feedback bound to a capture
+        # that does not exist is a fabricated evidence link — refuse, don't store.
+        from derivation_ledger import discover_captures
+        if args.capture_id not in discover_captures():
+            raise SystemExit(f"capture_id 不存在：{args.capture_id}。先保存原话，或不传 --capture-id。")
     memory_ids = [item.strip() for item in args.memory_ids.replace(";", ",").split(",") if item.strip()]
     row = {
         "id": args.feedback_id,

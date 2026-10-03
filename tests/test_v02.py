@@ -89,7 +89,9 @@ m.main()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         names = {tool["name"] for tool in data["result"]["tools"]}
-        self.assertTrue({"personal_capture_user_turn", "personal_add_followup", "personal_add_hypothesis", "personal_validate"}.issubset(names))
+        # 2.8.0：personal_add_hypothesis 并入 personal_add_record（kind=causal_hypothesis）；
+        # personal_derivation_status 并入 personal_validate（derivation=embed）。
+        self.assertTrue({"personal_capture_user_turn", "personal_add_followup", "personal_add_record", "personal_validate"}.issubset(names))
 
 
 if __name__ == "__main__":

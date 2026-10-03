@@ -98,7 +98,18 @@ def finalize_capture(capture_id: str, disposition: str, reason: str = "", *, roo
     with mutation_lock(root):
         entries = load_ledger(root); captures = discover_captures(root)
         if capture_id not in captures: raise ValueError(f"capture does not exist: {capture_id}")
-        entry = entries.get(capture_id) or _entry(capture_id, captures[capture_id]); linked, _ = record_capture_links(root); ids = sorted(set(entry.get("record_ids", [])) | linked.get(capture_id, set()))
+        entry = entries.get(capture_id) or _entry(capture_id, captures[capture_id])
+        # Closure is append-only (2.7.0): re-closing with the same disposition is an
+        # idempotent no-op, but FLIPPING a closed disposition (derived ->
+        # no-derivation-needed or back) used to silently overwrite status, receipt
+        # closure and timestamps — a laundering path audit could not see. Refuse it;
+        # the ledger history keeps the original closure as the record of truth.
+        prior_status = entry.get("status", "pending")
+        if prior_status in FINAL_STATUSES:
+            if prior_status == disposition:
+                return {**entry, "already_closed": True}
+            raise ValueError(f"capture 已按 {prior_status} 关闭，拒绝改判为 {disposition}；已闭环状态不允许翻转（如需修正请走 repair 并留下审计理由）")
+        linked, _ = record_capture_links(root); ids = sorted(set(entry.get("record_ids", [])) | linked.get(capture_id, set()))
         if disposition == "derived" and not ids: raise ValueError("cannot finalize as derived without at least one linked record")
         if disposition == "no-derivation-needed" and len(reason.strip()) < 4: raise ValueError("no-derivation-needed requires a concrete reason")
         entry.update({"record_ids": ids, "status": disposition, "finalized_at": now_iso(), "finalization_reason": reason.strip() or "derived records linked and checked"}); entry.setdefault("history", []).append({"at": now_iso(), "action": "capture-finalized", "status": disposition, "record_ids": ids}); entries[capture_id] = entry; _commit(entries, root, "capture-finalized", capture_id)

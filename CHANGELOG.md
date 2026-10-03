@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.8.0 — 2026-09-28 — 瘦身轮：宿主上下文开销减半，行为契约不变
+
+针对 pi 等宿主的常驻/调用开销做结构性瘦身，不改变任何档案语义与闸门逻辑。
+
+- **SKILL.md 44.1KB → 20.0KB（-55%）**：只保留每轮必须遵守的操作契约（两档闸门、原话保真、派生闭环、足迹纪律、低信号快速通道、检索三层、回访、校验维护）；领域细则索引到 `references/*.md` 按需加载。删除叙事性事故复盘与逐版批注，硬规则全部保留。
+- **MCP 工具 13 → 11**：`personal_derivation_status` 并入 `personal_validate`（`derivation` 段内嵌台账审计，默认开）；`personal_add_hypothesis` 并入 `personal_add_record`（`kind=causal_hypothesis` 伪 kind 路由到 hypotheses.jsonl 写入路径，不进 VALID_KINDS 防 md 记录路径误收；summary 契约 `claim || mechanism`）。两个旧名保留迁移期指针（isError 提示新调用方式），一个发布周期后删除。全部工具 description 砍到一行，规则叙述回归 SKILL.md 单一事实源。
+- **session_check 默认 light 模式（--light / MCP light=true 默认）**：本轮 turn 闸门 + pending 台账 + 回访调度，跳过 validate_memory 全库子进程——收尾从秒级降到毫秒级；`light=false` 恢复完整闸门供维护轮/迁移验收。gate_version 2.2.0，输出带 mode 字段。
+- 测试同步：版本五方钉（SKILL/VERSION/pyproject/README×2/CHANGELOG）更新；被合并工具名的两个套件断言改为新面 + 迁移指针行为断言。
+
+## 2.7.0 — 2026-09-26 — 诚实与规模轮：写入错误信号、读取尺寸预算、闸门治理，全部换新试卷验收
+
+接班自 16 项实测问题报告（3 项硬伤），按批准的 A–I 分组根治；防过拟合三律全程执行（修复常量不对单条查询调、冻结套件只作回归地板、验收换全新试卷 t10–t16）。
+
+- **A 写入链路重构（mcp_server.py / storage.py / view_freshness.py 新建）**：写入只做轻量落位校验决定 isError——"isError 恰好回答一件事：本次写入是否落位"。旧实现每写一次内联全量重建（实测 ~6.4s/次）并让收尾 validate 竞态并发写者，把成功写入报成失败、诱发盲重试与重复 id。视图改为 mtime 脏检测 + 读时重建（view_freshness.py，故意不用脏标志文件——mtime 不会与磁盘事实分歧，崩溃不留悬空标志）；锁 30s→120s + 指数退避；TimeoutError 从协议错误（-32603）改为干净可重试拒绝。实测：6 并发全周期 3.1s，record 写入最长 1.86s。
+- **B 台账/闸门（derivation_ledger.py / session_check.py / validate_memory.py）**：finalize 的 pending 提示死代码修复（旧代码对 run_script 的字符串输出调 .get()，永远空）；已闭环 capture 同状态幂等重入（already_closed）、异状态改判拒绝（翻转即洗白通道）；session_check 缺省 turn_id 自动审计最近 receipt（不再静默跳过 turn 闸门）、exit 2（警告）不再映射 isError、`--stale-days`（默认 7）把历史遗留 pending/receipt 降级为可见警告。
+- **C 校验统一 + 原子性（schema.py 新建 / v2_archive.py / record_feedback.py）**：schema.py 成为 branch id/日历日期/枚举的单一事实源，add_record 写入前校验与 validate_memory 完全对齐（未知 domain 拒绝并列出合法 branch id、salience 0-3、"learning" 类写入即废 kind 拒绝、非日历日期拒绝）；verbatim_refs 先预检再写文件（伪引用不再留下孤儿记录）；followup 伪 due_at（"下个月吧"）、hypothesis 枚举外 confidence、feedback 伪 capture 全部服务端拒绝。
+- **D 检索评分三缺陷（catalog_utils.py / lexicon.py / retrieve_v2.py / ppr.py）**：档案漂移暴露而非代码回归（差分诊断定案）。①嵌套 n-gram 三重计分改最大咬合 span；②自训练词表自污染加边界认证（jieba 单词或两个 ≥2 字词典词的复合）；③recency 越权乘了整个 event_value 改为只乘词面 + 实体聚焦先验（boost × (2/len(entity_refs))^k，PU_ENTITY_FOCUS 可关）；§4b 承诺的联想通道职责补完（零词面支持的实体反馈行按 timeline 序作为 preferred 传给 ppr）。v12 全套 26/26，h16 双断言（timeline rank 5 + associations 在场）真实档案实测通过。
+- **E 分类器（turn_receipts.py）**：裸"烦"改多字形态（"麻烦/这样有点麻烦"不再误触，冻结金标"挺烦/有点烦"保留）；补失落/迷茫/后怕/悬系（好悬/很悬/有点悬/提心吊胆）漏判词；第一人称弱标记（觉得/决定类）加技术语境否决，强情绪词不受否决。
+- **F 尺寸预算（catalog_context.py / retrieve_v2.py）**：五类读取全部带字符预算与确定性截断（survey 48K / routing 68K / full 96K / probe 80K / deep 100K，按实测 floor 校准而非硬凑——原 64K 目标低于诚实 floor，会截断每次读取让元数据失义）；超预算输出保持合法 JSON 并附 budget.truncated/omitted 元数据；probe 结构上限收紧（facets 20→10、entities 12→8、knowledge 10→8、fragments 16→10），facet 卡/实体卡/current_state 字段级裁剪；fit_budget 收缩计划加最终档，收缩循环可迭代到底。
+- **G CLI 修补（pipeline_view.py / update_state.py）**：pipeline_view 传 capture id 也渲染整回合管线（旧实现只渲染单个 capture，多 capture 回合的兄弟捕获不可见），`--latest` 落 HTML 索引；update_state 对 capture id 形态的 source（含 fragment.capture.* 前缀形态）自动解析为真实 source_path。
+- **H 本体修复（唯一动真实档案处，有备份有证据）**：capture.turn.b31babda… 的 link-drift 根因是同一晚 update_state 双跑留下的两份时间戳副本（均自称 current、正文均自述"现行版本见 …b"）。diff 确认 → fresh stable 备份（SHA 验证）→ 两副本 frontmatter 追认 archived（文件保留）→ `derivation_ledger.py --repair` → 审计清零（capture-record-link-drift 0 条，ledger 如实记录历史派生），b 记录在 timeline、归档副本退出投影。
+- **新试卷 t10–t16（验收层，全部通过）**：t10 并发错误信号、t11 视图预算+写入后免手动重建、t12 finalize 护栏、t13 记录 schema 与零孤儿、t14 分类器全新句子矩阵（17 句）、t15 会话闸门二卷、t16 检索二卷（5 条全新查询 + h16 回归点）。**验收过程抓出并修掉三个真缺陷**：①view_freshness 双检锁包住重建子进程 = 跨进程死锁（父持锁等子、子等锁，写入后第一次 MCP 读取必然 120s 超时）——外层放锁、由子进程自持锁；②`if args.get("stale_days")` 把合法的 0 当 falsy 吞掉——改为 `is not None`；③validate_memory `--require-closed-captures` 无龄期概念，结构闸门把 session_check 的降级短路——validate 补 `--stale-days` 透传（老遗留保持 warning，新 pending 依旧硬拦）。
+- **回归**：作者冻结套件 182/182（test_v03/v05 的 spine≥50 断言按"可观主干+诚实截断元数据"意图改写并注明理由；test_v08 加活档案 pending 环境前提跳过——真实 pending 出现在验收期间属闸门正确行为；test_v09 提醒在场断言与退出码正交化）；旧试卷 t01–t09 重跑通过（两处夹具适配：t04/t04b 的非 branch domain "learning" 升级为合法 branch id——恰是旧"写入即废"病灶的原始案例；t08 完整性检查改走 MCP validate 真实路径）。
+- **诚实边界**：probe/deep 预算上浮到 80K/100K 是"floor 可达 + 元数据诚实"的代价——结构上限已收紧，剩余体积主要是 12 条 timeline 卡、current_state 与 trace 的真实信息量；冻结金标 h16 在默认预算下零截断。
+
+
 ## 2.6.1 — 2026-09-06 — 泛化审计轮：召回/排序/分类三处修复，全部先测后改
 
 接班自验轮（用户铁律：不闭门造车、具体问题具体分析地借鉴前人、每步防过拟合三律）。全部改动沙盒实测后移植，评测底座为自动派生的集合（LongMemEval 式题型矩阵 IE/MR/TR/KU/ABS + 时间一致性金标 + 精确召回回归网，harness 与工作区镜像 parity 5/5）。
@@ -27,7 +53,7 @@
 ## 2.5.1 — 2026-09-05 — 门面卫生补丁（无检索/写入行为变更）
 
 - README 双语：包文件计数彻底解钉（2.5.0 时英文钉 38、中文漏改还挂着过时的 37），统一为“每次发布逐字节校验”的版本无关表述。
-- scripts/hot_mirror.py：移除三处 C:\Users\Administrator 机器硬编码（随公开 wheel 分发），改为 home 派生默认值 + PU_SKILLS_DIR / PU_HOT_MIRROR_DIR / PU_HOT_MIRROR_LOG 环境变量覆盖；本机行为不变。
+- scripts/hot_mirror.py：移除三处机器硬编码的绝对用户路径（随公开 wheel 分发），改为 home 派生默认值 + PU_SKILLS_DIR / PU_HOT_MIRROR_DIR / PU_HOT_MIRROR_LOG 环境变量覆盖；本机行为不变。
 - mcp_test.py：修复对现行 preflight 返回结构（turn_receipt 嵌套）的解析——原驱动按顶层 turn_id 取值，第 43 行 KeyError，公开仓库里的验收驱动已与被测 schema 脱节。
 - peek.py：与验收工作区副本同步（自动注入 --maintenance），评分不再依赖当轮 capture。
 - 测试 171 全绿；wheel 与源码逐字节一致性在构建时复验。

@@ -144,7 +144,11 @@ class AtomicWriteTests(unittest.TestCase):
             [sys.executable, str(SCRIPTS / "session_check.py"), "--allow-warnings"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
-        self.assertIn(result.returncode, (0, 2), result.stdout + result.stderr)
+        # Reminders ride on EVERY gate run; exit-code semantics (0/1/2) are owned
+        # by the v08 gate tests (incl. the mocked pending hard-fail). A live
+        # pending capture legitimately makes this exit 1 — the reminders must
+        # still be present, which is this test's protected intent.
+        self.assertIn(result.returncode, (0, 1, 2), result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertIn("backup", data["maintenance_reminders"])
         self.assertIn("age_days", data["maintenance_reminders"]["backup"])

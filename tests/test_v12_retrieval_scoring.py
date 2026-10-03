@@ -19,6 +19,23 @@ from catalog_utils import content_terms, single_char_aliases, term_weights, weig
 HAS_ARCHIVE = (ROOT / "memory" / "v2").is_dir()
 
 
+def _load_recall_gold() -> dict:
+    """Live-archive regression gold (real queries + record ids) lives in
+    memory/v2/private-mappings.json — gitignored, so it never enters the public
+    repo. Fresh clones skip the gold tests; the synthetic unit tests still run."""
+    path = ROOT / "memory" / "v2" / "private-mappings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    gold = data.get("recall_gold")
+    return gold if isinstance(gold, dict) else {}
+
+
+RECALL_GOLD = _load_recall_gold()
+GOLD_READY = HAS_ARCHIVE and bool(RECALL_GOLD)
+
+
 class WeightedTokenizerTests(unittest.TestCase):
     def test_single_chars_dropped_from_multi_char_runs(self):
         terms = weighted_query_terms("只狼 打法")
@@ -140,9 +157,10 @@ class WeightedMatchScoreTests(unittest.TestCase):
         self.assertEqual(weighted_match_score("任意文本", {}), 0.0)
 
 
-@unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/)")
+@unittest.skipUnless(GOLD_READY, "requires an archive plus recall gold (memory/v2/private-mappings.json)")
 class RecallRegressionTests(unittest.TestCase):
-    """The five documented failure cases must now hit their targets."""
+    """The documented failure cases must hit their targets. Gold data (queries,
+    real ids) lives in the gitignored private-mappings.json; structure here."""
 
     def run_probe(self, query):
         result = subprocess.run([sys.executable, str(SCRIPTS / "retrieve_v2.py"), "--maintenance", "--query", query, "--level", "probe", "--format", "json", "--no-trace"], capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -150,32 +168,42 @@ class RecallRegressionTests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_sekiro_entity_and_games_card_recalled(self):
-        data = self.run_probe("只狼 Sekiro 弦一郎 在玩 打法")
+        case = RECALL_GOLD["sekiro_card"]
+        data = self.run_probe(case["query"])
         entity_ids = [row.get("id") for row in data["entities"]]
-        self.assertIn("entity.game.sekiro", entity_ids[:3])
+        for wanted in case.get("entity_top3", []):
+            self.assertIn(wanted, entity_ids[:3])
         knowledge_ids = [row.get("record_id") for row in data["knowledge"]]
-        self.assertIn("fact.interests.games-detailed-20260809", knowledge_ids[:3])
+        for wanted in case.get("knowledge_top3", []):
+            self.assertIn(wanted, knowledge_ids[:3])
 
     def test_witcher3_card_recalled(self):
-        data = self.run_probe("巫师3 在玩 猫学派")
+        case = RECALL_GOLD["witcher3_card"]
+        data = self.run_probe(case["query"])
         knowledge_ids = [row.get("record_id") for row in data["knowledge"]]
-        self.assertIn("fact.games.witcher3-feel-anchored-by-rdr2-20260830", knowledge_ids[:3])
+        for wanted in case.get("knowledge_top3", []):
+            self.assertIn(wanted, knowledge_ids[:3])
 
-    def test_home_noise_recalled_for_roommate_query(self):
-        data = self.run_probe("室友 冲突 噪音 哥哥 家里")
+    def test_current_state_recalled_for_colocation_query(self):
+        case = RECALL_GOLD["room"]
+        data = self.run_probe(case["query"])
         record_ids = [row.get("record_id") for row in data["timeline"]]
-        self.assertIn("state.current.home-noise", record_ids[:5])
+        for wanted in case.get("timeline_top5", []):
+            self.assertIn(wanted, record_ids[:5])
 
     def test_privacy_rule_recalled(self):
-        data = self.run_probe("隐私 档案 给别人看 AI 记性")
+        case = RECALL_GOLD["privacy"]
+        data = self.run_probe(case["query"])
         knowledge_ids = [row.get("record_id") for row in data["knowledge"]]
-        self.assertIn("correction.meta.privacy-normalized-20260829", knowledge_ids[:5])
+        for wanted in case.get("knowledge_top5", []):
+            self.assertIn(wanted, knowledge_ids[:5])
 
     def test_positive_controls_stay_first(self):
-        for query, target in (("四级 英语 学习策略 词汇", "decision.education.university-study-strategy-20260820"), ("贷款 12月 到账 新生须知", "state.education.notice-payment-bus-bingyi-details-20260903")):
-            data = self.run_probe(query)
+        for case in RECALL_GOLD["positive_controls"]:
+            data = self.run_probe(case["query"])
             record_ids = [row.get("record_id") for row in data["timeline"]]
-            self.assertIn(target, record_ids[:2], f"{query} lost its positive control")
+            for wanted in case.get("timeline_top2", []):
+                self.assertIn(wanted, record_ids[:2], f"{case['query']} lost its positive control")
 
 
 class RecencyFactorTests(unittest.TestCase):
@@ -215,7 +243,7 @@ class RecencyFactorTests(unittest.TestCase):
         self.assertLessEqual(recency_factor({"date_start": "2027-01-01"}, today=date(2026, 9, 5)), 1.0)
 
 
-@unittest.skipUnless(HAS_ARCHIVE, "requires an initialized archive (memory/)")
+@unittest.skipUnless(GOLD_READY, "requires an archive plus recall gold (memory/v2/private-mappings.json)")
 class TimeConsistencyRecallTests(unittest.TestCase):
     """The §4c gold contract on the real archive: for two records about one matter
     spanning a month, the fresher must not be buried below the older one."""
@@ -225,38 +253,40 @@ class TimeConsistencyRecallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)
 
-    def test_entity_home_recent_state_outranks_old_intake(self):
-        # source.intake.2026-07-15 (old, entity home) vs home-social-pattern-20260719…:
-        # under recency the current-state records lead; the July intake drops back
-        data = self.run_probe("家庭交流现在的模式")
+    def test_recent_state_outranks_old_intake(self):
+        # under recency the current-state records lead; the old intake drops back
+        case = RECALL_GOLD["time_recent"]
+        data = self.run_probe(case["query"])
         ids = [row.get("record_id") or row.get("id") for row in data["timeline"]]
-        recent = next((i for i in ids if i and ("home-social-pattern" in i or "transition-overload" in i)), None)
-        intake = next((i for i in ids if i and i == "source.intake.2026-07-15"), None)
+        recent = next((i for i in ids if i and any(marker in i for marker in case["recent_markers"])), None)
+        intake = next((i for i in ids if i and i == case["old_id"]), None)
         if recent and intake:
             self.assertLess(ids.index(recent), ids.index(intake))
 
-    def test_h16_lawsuit_house_reaches_lexical_top(self):
-        # the §4b+§4c combined contract: zero query-term overlap record reaches the
+    def test_h16_assoc_reaches_lexical_top(self):
+        # the §4b+§4c combined contract: a zero query-term overlap record reaches the
         # timeline via entity boost + recency AND keeps its labeled associative path
-        data = self.run_probe("我爸又来电话说房子的事")
+        case = RECALL_GOLD["assoc_zero_overlap"]
+        data = self.run_probe(case["query"])
         ids = [row.get("record_id") or row.get("id") for row in data["timeline"]]
-        self.assertIn("event.family.parents-lawsuit-house-rent-20260903", ids[:5])
+        for wanted in case.get("timeline_top5", []):
+            self.assertIn(wanted, ids[:5])
         assoc = [row.get("record_id") for row in data["associations"]]
-        self.assertIn("event.family.parents-lawsuit-house-rent-20260903", assoc)
+        for wanted in case.get("in_associations", []):
+            self.assertIn(wanted, assoc)
 
     def test_superseded_fact_never_outranks_its_current_replacement(self):
-        # 2.6.1 §4f knowledge-update contract (P6 matrix, KU 15/17 → 17/17 with the
-        # STATUS_DEMOTE factor): for a versioned fact, the CURRENT row must rank at
-        # or above the superseded one. 录取结果: admission-result-20260721 was
-        # superseded by …20260722 — before the fix the 21st ranked FIRST. Superseded
+        # 2.6.1 §4f knowledge-update contract (STATUS_DEMOTE factor): for a versioned
+        # fact, the CURRENT row must rank at or above the superseded one. Superseded
         # rows stay visible (version-chain audit trail); only their ORDER moves.
-        data = self.run_probe("录取结果")
+        case = RECALL_GOLD["versioned_fact"]
+        data = self.run_probe(case["query"])
         ids = [row.get("record_id") or row.get("id") for row in data["timeline"]]
-        old = next((i for i, x in enumerate(ids) if x == "decision.education.admission-result-20260721"), 99)
-        new = next((i for i, x in enumerate(ids) if x == "decision.education.admission-result-20260722"), 99)
-        self.assertLessEqual(new, old, f"superseded 0721 outranks current 0722: {ids[:4]}")
+        old = next((i for i, x in enumerate(ids) if x == case["old"]), 99)
+        new = next((i for i, x in enumerate(ids) if x == case["current"]), 99)
+        self.assertLessEqual(new, old, f"superseded old row outranks its current replacement: {ids[:4]}")
         statuses = {row.get("record_id") or row.get("id"): row.get("status") for row in data["timeline"]}
-        self.assertEqual(statuses.get("decision.education.admission-result-20260721"), "superseded")
+        self.assertEqual(statuses.get(case["old"]), case["old_status"])
 
 
 if __name__ == "__main__":

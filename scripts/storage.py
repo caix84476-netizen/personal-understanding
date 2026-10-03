@@ -28,8 +28,14 @@ def _held() -> dict[str, tuple[object, int]]:
 
 
 @contextlib.contextmanager
-def mutation_lock(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
-    """One re-entrant file lock for all writers sharing a skill directory."""
+def mutation_lock(root: Path, *, timeout: float = 120.0) -> Iterator[None]:
+    """One re-entrant file lock for all writers sharing a skill directory.
+
+    Default timeout raised 30s -> 120s (2.7.0): concurrent MCP sessions (zcode +
+    codex both register this server) legimately queue behind a rebuild or a burst
+    of writes; 30s turned healthy contention into hard failures. Polling backs
+    off exponentially (0.05s floor kept for the fast path, doubling to a 0.5s
+    cap) so six waiting processes don't spin the disk."""
     root = root.resolve()
     key = str(root).casefold()
     held = _held()
@@ -50,6 +56,7 @@ def mutation_lock(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
         handle.flush()
     deadline = time.monotonic() + timeout
     acquired = False
+    backoff = 0.05
     try:
         while not acquired:
             try:
@@ -61,8 +68,9 @@ def mutation_lock(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
                 acquired = True
             except OSError:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError(f"等待个人档案写锁超时：{lock_path}")
-                time.sleep(0.05)
+                    raise TimeoutError(f"等待个人档案写锁超时（{timeout:.0f}s）：{lock_path}")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 0.5)
         held[key] = (handle, 1)
         yield
     finally:

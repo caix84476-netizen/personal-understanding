@@ -4,18 +4,20 @@ from __future__ import annotations
 from cli_runtime import configure_utf8_stdio
 configure_utf8_stdio()
 import argparse, json, re
+from datetime import date
 from pathlib import Path
 from source_audit import audit_records
 from v2_archive import v2_audit
-from derivation_ledger import audit_ledger
+from derivation_ledger import audit_ledger, load_ledger
 from catalog_utils import split_ids
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_SKILL_FIELDS = {"name", "description", "version"}
 REQUIRED_RECORD_FIELDS = {"id", "kind", "status", "confidence", "sensitivity", "source_refs"}
-VALID_KINDS = {"fact", "state", "event", "preference", "rule", "heuristic", "value", "decision", "model", "entity"}
+# 2.7.0: enum sets come from schema.py — the single source shared with the MCP
+# write path, so the auditor and add_record can no longer drift apart.
+from schema import ROUTING_KINDS, VALID_KINDS, valid_date_string  # noqa: E402
 VALID_STATUS = {"current", "superseded", "uncertain", "archived", "deleted"}
-ROUTING_KINDS = {"state", "decision", "model", "value", "heuristic", "rule", "preference"}
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -29,7 +31,7 @@ def frontmatter(path: Path) -> dict[str, str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__); ap.add_argument("--strict", action="store_true"); ap.add_argument("--json", action="store_true"); ap.add_argument("--require-closed-captures", action="store_true", help="fail when there are pending/untracked captures"); args = ap.parse_args()
+    ap = argparse.ArgumentParser(description=__doc__); ap.add_argument("--strict", action="store_true"); ap.add_argument("--json", action="store_true"); ap.add_argument("--require-closed-captures", action="store_true", help="fail when there are pending/untracked captures"); ap.add_argument("--stale-days", type=int, default=7, help="pending 捕获的降级龄期（天）：达到龄期的历史遗留保持 warning，不因 --require-closed-captures 升格为 error；与 session_check 同一默认"); args = ap.parse_args()
     errors: list[str] = []; warnings: list[str] = []
     meta = frontmatter(ROOT / "SKILL.md")
     missing = REQUIRED_SKILL_FIELDS - meta.keys()
@@ -58,6 +60,15 @@ def main() -> int:
         if data.get("status") not in VALID_STATUS: errors.append(f"{path.name}: invalid status {data.get('status')}")
         if data.get("domain") and data.get("domain") not in branch_ids: errors.append(f"{path.name}: unknown domain {data.get('domain')}")
         if data.get("status") == "current" and data.get("kind") in ROUTING_KINDS and not data.get("domain"): errors.append(f"{path.name}: current routing record requires a domain")
+        # 2.7.0: non-calendar dates are a WARNING, not an error — legacy rows must
+        # not start failing the whole audit, but a date like 2026-13-99 silently
+        # means "undated" downstream and deserves to be visible as debt. The bare
+        # literal "None" is legacy-import noise the projection already normalizes
+        # to undated (same convention as normalized_phase), so it is not debt.
+        for date_field in ("valid_from", "last_confirmed", "date_end"):
+            raw_date = str(data.get(date_field) or "").strip()
+            if raw_date and raw_date.lower() != "none" and not valid_date_string(raw_date):
+                warnings.append(f"{path.name}: {date_field} 不是合法日历日期（{raw_date}），投影按无日期处理")
         if data.get("kind") == "model" and data.get("status") == "current" and not data.get("supports"): warnings.append(f"{path.name}: current model has no explicit supports evidence")
         if not re.match(r"^[a-z0-9][a-z0-9._-]+$", record_id): errors.append(f"{path.name}: invalid id {record_id!r}")
         # split_ids (not raw re.split): values are stored as "; a; b", so an
@@ -94,9 +105,24 @@ def main() -> int:
     derivation = audit_ledger(ROOT)
     for item in derivation.get("errors", []): errors.append("derivation: " + json.dumps(item, ensure_ascii=False))
     closure_codes = {"capture-pending-derivation", "capture-untracked"}
+    # 2.7.0 stale governance: without an age check here, --require-closed-captures
+    # re-flagged even ancient leftovers as errors and the session gate's
+    # --stale-days downgrade could never take effect end-to-end (the structure
+    # gate short-circuited it). Ages come from the ledger's opened_at; a missing
+    # or unparseable date keeps the strict path.
+    ledger_entries = load_ledger(ROOT)
+    def closure_item_is_stale(item: dict) -> bool:
+        entry = ledger_entries.get(item.get("capture_id") or "") or {}
+        opened = str(entry.get("opened_at") or "")[:10]
+        if not opened:
+            return False
+        try:
+            return (date.today() - date.fromisoformat(opened)).days >= args.stale_days
+        except ValueError:
+            return False
     for item in derivation.get("warnings", []):
         rendered = "derivation: " + json.dumps(item, ensure_ascii=False)
-        if args.require_closed_captures and item.get("code") in closure_codes:
+        if args.require_closed_captures and item.get("code") in closure_codes and not closure_item_is_stale(item):
             errors.append(rendered)
         else:
             warnings.append(rendered)
