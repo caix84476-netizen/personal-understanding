@@ -284,10 +284,10 @@ def rclone_push(remote: str, config: dict) -> str:
     try:
         proc = subprocess.run(
             [exe, "copy", str(BACKUPS), f"{remote}:personal-understanding-archive/backups", "--transfers", "4"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600,
         )
     except subprocess.TimeoutExpired:
-        return "push timed out (900s); the next backup run will resume automatically once the network recovers"
+        return "push timed out (3600s); the next backup run will resume automatically once the network recovers"
     if proc.returncode == 0:
         return f"archived snapshot pushed to {remote}:personal-understanding-archive/backups (overwrite update)"
     return f"push failed ({proc.returncode}): {(proc.stderr or proc.stdout).strip()[:200]}"
