@@ -1,4 +1,6 @@
-# Personal Understanding — README 重写交接文档（v3，2026-10-10）
+# Personal Understanding — README 重写交接文档（v3-final，2026-10-10）
+
+> **任务已完成并归档。** commit `77cd89e` 已 push 到 origin main（2026-10-10）。本文件保留作叙事蓝本与决策记录，后续 README 微调可直接参考第五节事实源与第七节注意事项。
 
 > 这是 README 重写任务的技术蓝本与跨会话交接。新对话开始前先读这份文件，再读仓库当前状态，就能无缝继续。
 > 本文件由 v1/v2 合并而来（原 README-rewrite-handoff-v1.md 已改名）。
