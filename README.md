@@ -2,213 +2,78 @@
 
 # Personal Understanding
 
-### A memory that recalls the way you do — by evidence chains and association, not similarity scores.
+**一个带原话溯源的 agent 记忆系统——模拟人脑的联想、发散、聚合、逆向，但每条结论都追得回你当时说的原话。**
 
-**Verbatim-first · Evidence-chain · Associative recall · Anti-fabrication · Local-first · One folder, zero dependencies**
+本地优先 · 一个文件夹 · 仅 Python 标准库 · 零依赖
 
 [![PyPI](https://img.shields.io/pypi/v/personal-understanding)](https://pypi.org/project/personal-understanding/)
 [![Python](https://img.shields.io/pypi/pyversions/personal-understanding)](https://pypi.org/project/personal-understanding/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/caix84476-netizen/personal-understanding?style=social)](https://github.com/caix84476-netizen/personal-understanding/stargazers)
 
-[中文文档](README.zh-CN.md) · [How recall works](#under-the-hood-how-recall-actually-works) · [Quick start](#quick-start) · [Design principles](#design-principles)
-
-`agent-memory` `mcp` `claude` `codex` `skills` `local-first` `associative-recall` `personal-knowledge`
+[English](README.en.md) · [架构](#架构) · [上手](#上手)
 
 </div>
 
 ---
 
-## The problem with every memory system you've tried
+## 这是啥
 
-Typical agent memory has a dirty secret: **the model summarizes first and stores the summary.** Your words get paraphrased, compressed, and blended with the model's own interpretations on day one. Six months later, "you" are a stack of lossy summaries — and when the model gets you wrong, you can't even audit why, because the original evidence is gone.
+给 AI 助手用的个人记忆。你跟它聊过的事，它会真的"记得你这个人"，而不只是把每句话压成一句摘要扔进向量库。
 
-And the retrieval underneath is *similarity*. Here's the part most memory products don't say out loud:
+它跟市面上记忆工具最大的不同，是流程顺序：**先一字不改存下你的原话，再从原话里派生理解。** 不是先摘要、先解读。所以半年后它把你记错了，你能审计；它不确定，它会说不知道——而不是编一个看起来合理的答案糊弄过去。
 
-> **Recall is not similarity.** When you complain "this game feels like trash, the hits have no weight," a human who knows you thinks: *he once said his benchmark for game feel was Red Dead Redemption 2, and The Witcher 3 lost to it.* Zero words overlap between the complaint and that memory — a similarity score gives it **zero**, and the memory you need most is invisible. Human recall is directional and associative: you think of a thing's opposite, its reason, the same mental core one abstraction up. That is not what a vector database computes.
+## 它怎么记
 
-**Personal Understanding fixes both halves:**
+一段话进来，大概经过这么几步：
 
-> ### Save the exact words first. Recall by evidence chains and graph spread, not similarity. Prove every path.
+1. **先存原话**——完整消息一字不改落盘，带 SHA-256 哈希、时间戳、会话标识，存了就不许覆盖。纠正只新增，不静默改。
+2. **再派生**——从原话里拆出事件、人物、地点、情境卡、因果假设，每一条都挂回它出自的那句原话。模型自己猜的（比如"我为什么总是这样"的成因）单独放一层，默认标 `candidate`，绝不悄悄转正成事实。
+3. **关闭闭环**——存下原话不等于档案更新完了。每条都得拆完、链完、关掉，或者写明"没新东西"再关。孤立捕获过不了闸。
+4. **检索时像人脑**——不把全库灌给模型，分三层走：`survey` 先看一张紧凑的"我在哪、该往哪找"路由地图，`probe` 沿人物、情境卡、时间邻居发散开，`deep` 回到原话核验。中间还夹一条**联想通道**：沿档案图扩散，带出词面都对不上、但确实相关的候选——像你突然想起一档子八竿子打不着、可就是有关联的旧事。遇到宽泛问题（"我该怎么办"），就拆成几条线分别 probe，再把线索拼起来——侦探拼图式的聚合。
 
-Every personal message is captured **verbatim and immutably** (SHA-256 hashed, timestamped, session-tagged) *before* anything else happens. Structured understanding is built **on top of** the evidence, every derived fact linking back to the quote it came from. And recall runs through a measured three-layer stack that can surface records with *zero lexical overlap* — with the association path shown, so the model can judge it instead of trusting a bare score. When the agent misremembers you, you audit it. When it doesn't know, it says so.
-
-## What makes it different
-
-| | Typical memory tools | Personal Understanding |
-|---|---|---|
-| What gets stored first | the model's summary | **your exact words — immutable, hashed** |
-| Recall model | similarity over summaries | **three-channel lexical + associative graph spread, evidence path visible** |
-| Derived facts traceable to source | rarely | ✓ every record links back to its verbatim |
-| Model guesses marked as guesses | no | ✓ hypothesis layer, `candidate` by default, never silently promoted |
-| Old lossy summaries | silently reused | ✓ flagged as **summary debt** — retrieval discloses "this part comes from an old summary" |
-| Says "saved" when the save failed | happens | ✗ impossible — a hard gate (`session_check`) must exit 0 before "archive updated" may be claimed |
-| Invented dates, merged people, fake causal edges | possible | ✗ forbidden by written policy and enforced by validators |
-| Runtime | server + vector DB + embeddings | **one folder, Python stdlib only** |
-| Where your data lives | often their cloud | **your machine. Full stop.** |
-
-## See it work — your words in, proof out
-
-A real pipeline run (fictional user "Alex", real CLI output, zero edits): a message lands,
-gets captured verbatim with its SHA-256, a derived fact links back to that exact quote,
-and a later associative query surfaces it through the evidence chain.
-
-![evidence-chain demo](docs/demo.svg)
-
-## Why not just use your agent's built-in memory?
-
-Newer agents ship with "memory" now — if that's enough for you, use it. This project exists for the people who hit its walls:
-
-| | Built-in agent memory | Personal Understanding |
-|---|---|---|
-| Data ownership | locked in the vendor's account, rarely exportable, gone when you switch tools | a plain-text folder on your machine — read it, grep it, back it up, move it |
-| Portability | memory only works inside that product | one archive, any MCP client — Claude, Codex, ZCode, VS Code, whatever comes next |
-| Auditability | black box — you can't see what got stored, or why it answered that way | every derived fact links back to the exact quote; the retrieval trace shows *why* each record surfaced, and what was deliberately held back |
-| Retrieval | fuzzy summary recall | three-channel + associative recall that bottoms out in your original words |
-| Privacy | your personal history on their servers | local only — no telemetry, no cloud calls |
-
-Vendor memory optimizes for a smoother conversation inside their product. This project optimizes for a memory **you own, that moves with you across tools, and that can prove where every fact came from.** Different products — vendor memory getting better doesn't make this one redundant.
-
-## Under the hood: how recall actually works
-
-Most memory READMEs stop at "we use embeddings." Here is the whole stack, because the mechanics *are* the product.
-
-**Layer 0 — self-trained lexicon (query hygiene).** Every query is tokenized against a vendored dictionary (jieba, MIT) **plus a lexicon the archive trains on itself**: any 2–4 char string occurring in ≥2 archive texts becomes a word, so proper nouns no general dictionary knows (`弦一郎`, `艾迪芬奇`, `晕3D`) are recognized automatically. Out-of-vocabulary slices keep their recall but are weight-capped so cross-word accidents (`郎我`) can no longer out-anchor real terms. Measured root cause this fixed: the query `巫师3` splits into `巫师` + `3`, and a stray `3` matches dates inside record IDs — it once handed a *driver's-license record* the top slot for a Witcher query.
-
-**Layer 1 — three-channel lexical recall.** Timeline events, fact/model cards, and entity cards are scored separately (IDF-weighted, length-normalized, anchor-demoted) instead of one blended soup — a complaint about game feel reaches the *fact* card even when no *event* matches. Every probe records a decision trace: what was selected, what was held back and why.
-
-**Layer 2 — associative spread (the recall humans do).** Entities and **concept cards** (game-feel, money-and-guilt, body-limits, reading-taste …) form a graph. A personalized PageRank spread — local, hub-capped so popular nodes can't dress popularity up as association — surfaces records the query shares **zero words with**, each with its `via` path visible:
-
-- *"this game's hits feel like paper"* → `concept: gameplay-feel` → **the Witcher-3-vs-RDR2 feel-anchoring record** (no shared word — exactly the recall a friend would do)
-- *"book drought, recommend something"* → `concept: reading-taste` → your reading history and taste anchor
-- *"recommend me a game"* → `concept: narrative-games` → **the hard rule that 3D-sickness is a body-level exclusion** — the *opposite* side of the desire, one edge away
-
-**The stack is scored on a 16-round simulated-usage matrix** (real user-tone queries across 8 life domains, model-graded); every release re-runs it. Zero expected-recall regressions through 2.6.0, while the two "all-channels-missed" cases above went from nothing to surfaced.
-
-**Why not embeddings?** They're the right tool at archive scale, and the design leaves a slot for them. But at personal-archive scale the measured failures are lexical and structural, not semantic — and a similarity score is unauditable by nature: it returns a number, never a path. Here, when a memory surfaces, *why* it surfaced is always shown.
-
-## Same message, two very different memories
-
-**Without Personal Understanding** — a typical memory implementation:
-
-> **You:** I finally played my first full song on guitar today. Three weeks until I perform it at my cousin's wedding — honestly less nervous than before.
-> **AI:** That's awesome, congrats! 🎸 Keep it up!
->
-> *What got stored: `"user played guitar, feeling positive."` A lossy summary. No source, no date, no people, no way to check it. Next month it's gone — or worse, silently paraphrased into something you never said.*
-
-**With Personal Understanding** — the same message:
-
-> **You:** I finally played my first full song on guitar today. Three weeks until I perform it at my cousin's wedding — honestly less nervous than before.
-> **AI:** *(first: captures your complete message verbatim — SHA-256-hashed, timestamped, session-tagged — before anything else)*
-> *(then: derives and links — `event` "first full song on guitar" · salience `supporting` · linked to `Sara` and the wedding goal · updates your current state: performance anxiety ↓)*
-> **AI:** First full song is a real milestone. Last time, performing at the wedding made you nervous — how does it feel now that it's three weeks out?
->
-> *Every claim traces back to your exact words. Ask "where does that come from?" and the agent shows you the original quote — not a paraphrase of a paraphrase. And when it's the wedding week, the archive checks in by itself.*
-
-## Highlights
-
-- 🗣️ **Verbatim-first capture** — the complete message, word for word, before any summarizing, splitting, or interpreting. Corrections add new captures; nothing is ever silently overwritten.
-- 🔁 **Derivation closure** — a successful capture is not a finished update. Every capture must be split into records, linked, and closed — or explicitly closed as "nothing new" with a stated reason. Orphans can't slip through.
-- 🧠 **Human-like progressive recall** — `survey` (compact routing map) → `probe` (fan out along entities, concept cards, and time neighbors) → `deep` (verify the exact quote). No vector dumps, no keyword-only search.
-- 🕸️ **Associative recall with visible paths** — zero-overlap memories surface through a concept-card graph with the association path attached; the model judges the link, nothing arrives as an unexplained score.
-- 📻 **Cold recall ladder** — for "I forget, we talked about something like this…" moments: probe from any hint, walk time neighbors, then browse a time window like flipping through an old photo album.
-- 🔬 **Causal hypothesis layer** — "why am I like this?" gets a structured answer: claim, mechanism, supports, counterexamples, competing explanations, scope, confidence — always `candidate`, never presented as fact.
-- ⏰ **Proactive follow-ups** — "let's see in a few days" becomes a tracked loop. When it's due, the agent checks back *with the original context*, not a context-free nag.
-- 🚦 **Hard gates, not vibes** — three-state validation (`clean` / `warnings` / `failed`), atomic writes everywhere, `session_check` as a non-zero-exit gate before any "the archive is updated" claim. Reads that cannot corrupt the archive have an audited degraded path; writes never do.
-- 📉 **Summary debt accounting** — legacy material that lost its source is labeled, counted, and disclosed in retrieval. It can never impersonate verbatim.
-- 📊 **Pipeline timeline & audit dashboard** — replay one turn's whole life (gating decision → capture → closure → every retrieval query, association, and held-back candidate) as a single read-only page, or browse the full dashboard.
-- 🔌 **Drop-in for your client** — an idempotent installer auto-detects and registers a local MCP server across Claude clients, Codex, VS Code / Cursor / Windsurf / Cline / Trae, ZCode, and generic `.agents` configs.
-- 💾 **Backups with integrity** — SHA-256-manifested snapshots, mirror-to-second-location support (any rclone remote), and a quarterly salience review that gracefully demotes stale imported weights instead of letting them fossilize.
-
-## Architecture
+## 架构
 
 ```mermaid
 flowchart LR
-    A["user message"] --> B{"turn preflight<br/>(router)"}
-    B -->|"personal content"| C["immutable verbatim capture<br/>+ SHA-256 · session · source"]
-    C --> D["derivation ledger<br/>(pending)"]
-    D --> E["derive: events · entities · concept cards<br/>context cards · hypotheses · follow-ups"]
-    E --> F["finalize:<br/>derived / nothing-new"]
-    B --> G["probe: lexicon-hygiened query"]
-    G --> H["three-channel lexical recall<br/>timeline · cards · entities"]
-    G --> I["associative spread (PPR)<br/>zero-overlap candidates + via path"]
-    H --> J["deep = verbatim only<br/>(summary debt disclosed)"]
-    F --> K["session_check<br/>hard gate · must exit 0"]
-    I --> K
-    J --> K
-    K --> L["answer"]
-    L --> M["feedback loop<br/>helpful / missed / corrected"]
-    M -.->|quarterly| N["salience review<br/>+ deep semantic review"]
+    A["用户消息"] --> B{"preflight 路由"}
+    B -->|个人内容| C["不可变原话捕获<br/>SHA-256 · 会话 · 来源"]
+    C --> D["派生账本 pending"]
+    D --> E["派生: 事件 · 实体 · 情境卡 · 假设 · 待回访"]
+    E --> F["闭环: derived / 无新增"]
+    B --> G["survey → probe → deep<br/>+ 联想通道"]
+    G --> H["deep 只读原话"]
+    F --> I["session_check 硬闸门"]
+    I --> J["回答"]
+    J --> K["反馈回路"]
+    K -.->|季度| L["权重复盘 + 语义审查"]
 ```
 
-On disk it's plain files you can read, grep, and back up: `sources/conversation/` (immutable verbatim + hashes) and `memory/v2/` (fragments, timeline, entities, concept cards, contexts, follow-ups, hypotheses, decision traces) — with legacy records kept as a compatibility layer and honestly marked `summary_only`.
+落盘就是普通文件，能 grep、能备份：`sources/conversation/` 存不可变原话 + 哈希，`memory/v2/` 存派生的时间线、实体、情境卡、假设、待回访、检索轨迹。丢了来源的旧摘要诚实标成 `summary_only`，检索时会告诉你"这段来自旧摘要，不是原话"。
 
-## Quick start
+## 上手
 
 ```bash
-# 1. clone into your client's skills directory
 git clone https://github.com/caix84476-netizen/personal-understanding.git \
-    ~/.claude/skills/personal-understanding      # or ~/.codex/skills/ , or your client's equivalent
-
-# 2. bootstrap the archive skeleton (directories + generic domain branches; idempotent)
-python scripts/init_archive.py
-
-# 3. register the local MCP server (auto-detects clients; idempotent)
-python scripts/install_mcp.py --auto            # Windows: just double-click register-mcp.cmd
-
-# 4. restart your client session — the personal_* tools go live
-
-# 5. open the audit dashboard / replay any turn's pipeline any time
-python scripts/open_dashboard.py                # Windows: double-click open-dashboard.cmd
-python scripts/pipeline_view.py --latest 5
+    ~/.claude/skills/personal-understanding      # 或你客户端的 skills 目录
+python scripts/init_archive.py            # 初始化档案骨架（幂等）
+python scripts/install_mcp.py --auto      # 注册本地 MCP 服务（幂等）
+# 重启客户端，personal_* 工具上线，正常聊天即可
+python scripts/open_dashboard.py           # 随时打开审计面板
 ```
 
-**Requirements:** Python 3.10+ · stdlib only, zero pip installs · Windows / macOS / Linux.
+需要 Python 3.10+，仅标准库，零 pip 依赖，Windows / macOS / Linux 都行。也能 `pip install personal-understanding` 装服务端，但完整的 skill 大脑（`SKILL.md` + 审计面板）建议用上面的 clone。
 
-**Prefer pip?** The MCP server + installer are also on [PyPI](https://pypi.org/project/personal-understanding/): `pip install personal-understanding`, then `personal-understanding-install` to register the local MCP server. The pip package ships the Python side only — for the full skill brain (`SKILL.md` + dashboard), use the clone steps above. **As of 2.2.1 the wheel is no longer a stale snapshot** — every packaged file is byte-identical to the source tree, re-verified on every release. One caveat remains: `personal-understanding-install` registers the server but does not bootstrap an archive root, so start from scratch with `python -m personal_understanding.init_archive`. The clone steps above remain the recommended path for the full skill.
+装好正常聊就行——"我最近……""记住一下……""为什么我总是……"，它会自己接住。问"你还记得……吗""这结论哪来的"，顺着证据链走到底。
 
-Then just talk normally: *"I've been feeling…"*, *"remember that…"*, *"why do I keep…"* — the skill's description triggers on personal content, captures your words, and takes over from there. Ask *"what do you remember about…"*, or *"where does that come from?"* and follow the evidence chain.
+## 你的数据归你
 
-## Your data stays yours
+全在本地、在 skill 目录里跑。无遥测、无云调用、无第三方 embeddings。`.gitignore` 默认挡住 `memory/`、`sources/`、`backups/`——你给 skill 目录做版本管理也绝不会误提交私人档案。
 
-- Everything is processed **locally**, in the skill folder. No telemetry, no cloud calls, no embeddings shipped to third parties.
-- The shipped `.gitignore` blocks `memory/`, `sources/`, and `backups/` — so you can version-control your skill folder and **never commit your private archive by accident**.
-- Sensitivity labels (`private` / `highly-private`) control *relevance*, not secrecy-from-you: unrelated questions never leak unrelated private material.
+## 它从哪来
 
-## Design principles
+不是拍脑袋想出来的框架——是一份天天在用的档案，被十几轮加固磨出来的（见 [CHANGELOG](CHANGELOG.md)）。一次撕碎 frontmatter 的权重衰减 bug 让所有写入变成原子操作；survey 曾每轮加载 800KB 旧目录，现在压成一张 ~90KB 路由图；整套闭环和硬闸门，是因为"相信我，存好了"在真实生活里不够格。
 
-These are written policy, enforced by validators — not aspirations:
-
-1. **Verbatim fidelity first** — no summary ever poses as the user's words; `summary_only` is marked as such forever.
-2. **Recall must be auditable** — similarity alone never decides; associative candidates carry their graph path, and every probe logs what was selected *and* what was deliberately held back.
-3. **No fabricated certainty** — uncertain dates stay uncertain; vague pronouns don't become people; single events never become causes; association edges are declared semantics, never invented for a prettier graph.
-4. **Newer words outrank older archives** — corrections build `supersedes` / `contradicts` chains; nothing is silently erased.
-5. **One salience axis** — `pivotal / key / supporting / passing` on a single 0–3 scale; imported weights admit they're heuristics.
-6. **Silence is not feedback** — only explicit corrections and confirmations, with quotable evidence, feed the feedback loop.
-7. **Structure clean ≠ semantically correct** — deep review exists precisely because validators can't catch meaning.
-
-## Where it came from
-
-Not a framework thought up in one afternoon — a working archive refined through daily use and a dozen hardening rounds (see the [CHANGELOG](CHANGELOG.md)): a salience-decay bug that once shredded frontmatter is why all writes are now atomic and reviewed; survey used to load ~818 KB of legacy catalog per turn — it's a ~90 KB routing map now (~230 ms); the associative layer exists because its author kept hitting the wall that "recall is not similarity" — the 2.6.0 changelog documents the measured root causes, the designs tried and rejected, and the regression that proved deletion was wrong before demotion was chosen.
-
-## Status
-
-- **Current release: v2.8.0** — slimming release: SKILL.md 44KB→20KB core contract with references indexed on demand, MCP tools 13→11 (derivation_status absorbed into validate, add_hypothesis absorbed into add_record kind=causal_hypothesis; both keep migration pointers), session_check default light mode (turn gate in ms, full-library validate via light=false). Schema stable; behavior contracts unchanged.: writes no longer rebuild inline (isError answers exactly "did this write land", views rebuild lazily on read), bounded views/retrievals with deterministic truncation metadata, finalize flip-guard + pending visibility, write-path schema parity with the auditor, session-gate stale governance, and three real defects caught by the new acceptance papers (read-path rebuild deadlock, falsy stale_days=0 swallowing, structure-gate downgrade short-circuit). Schema stable (`memory/v2/` v2.0.0); actively maintained. Also on [PyPI](https://pypi.org/project/personal-understanding/).
-- Works with any MCP-capable client. The skill brain (`SKILL.md`) is written in Chinese and works with archives in any language; retrieval is tuned for mixed Chinese/Latin text and degrades gracefully elsewhere.
-- Roadmap: editable dashboard pages, richer cold-recall ranking, optional vector side-channel for very large archives (pluggable by design), optional encrypted archive-at-rest.
-
-## Contributing
-
-Issues and PRs welcome — especially: new client installers for `install_mcp.py`, dashboard improvements, and evaluation matrices for languages beyond Chinese.
-
-## License
+## 许可
 
 [MIT](LICENSE) © 2026 caix84476-netizen
-
----
-
-<div align="center">
-
-If Personal Understanding saves you from re-explaining yourself to your AI for the nth time, **a star ⭐ helps others find it.**
-
-</div>
