@@ -2,77 +2,117 @@
 
 # Personal Understanding
 
-**A verbatim-traceable agent memory system — it mimics how a human brain associates, fans out, converges, and reasons backward, but every conclusion traces back to the exact words you said.**
+**An agent memory system with verbatim trace-back — it mimics how a human brain associates, fans out, converges, and reasons backward.**
 
-Local-first · one folder · Python stdlib only · zero dependencies
+[中文](README.md) · [What it is](#what-it-is) · [Feature map](#feature-map) · [Quick start](#quick-start) · [Design](#design)
 
 [![PyPI](https://img.shields.io/pypi/v/personal-understanding)](https://pypi.org/project/personal-understanding/)
 [![Python](https://img.shields.io/pypi/pyversions/personal-understanding)](https://pypi.org/project/personal-understanding/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/caix84476-netizen/personal-understanding?style=social)](https://github.com/caix84476-netizen/personal-understanding/stargazers)
 
-[中文](README.md) · [Architecture](#architecture) · [Quick start](#quick-start)
-
 </div>
+
+`agent memory` `personal memory` `AI memory system` `MCP server` `local-first` `verbatim capture` `verbatim trace-back` `associative retrieval` `Personalized PageRank` `timeline memory` `auditable memory` `anti-hallucination memory` `personal knowledge management` `LLM agent memory` `claude skill` `codex skill`
 
 ---
 
 ## What it is
 
-A personal memory for your AI assistant. The things you tell it actually become "knowing you as a person" — not just each sentence squashed into a summary and dumped in a vector store.
+A personal memory system for AI assistants: plug it into clients like Claude, Codex, or Pi, and it remembers *you as a person* across sessions.
 
-The big difference from every memory tool out there is the order of operations: **it saves your exact words first, then derives understanding from them.** No summarizing first, no interpreting first. So six months later, when it misremembers you, you can audit it; when it isn't sure, it says so — instead of inventing a plausible-sounding answer.
+The mainstream approach — summarize or embed every sentence first, then throw the original away — is reversed here: **your exact words are saved first, untouched; understanding is only a derivation from them**. Derivations can be recomputed and corrected when wrong, while the original words stay in place for auditing — that's the "verbatim trace-back." As for "associates, fans out, converges, reasons backward": those are the four brain-like ways it finds things when it recalls, covered one by one in the [feature map](#feature-map) below.
 
-## How it remembers
+## Life of a message
 
-A message comes in and goes through roughly this:
-
-1. **Capture verbatim** — the complete message is written word-for-word, with a SHA-256 hash, timestamp, and session tag. Once written, it can't be overwritten. Corrections add new captures; nothing is silently edited.
-2. **Derive** — events, people, places, context cards, causal hypotheses are split out of the verbatim, and each one links back to the exact quote it came from. The model's own guesses (e.g. "why am I always like this") live in a separate layer, marked `candidate` by default — never silently promoted into fact.
-3. **Close the loop** — saving the words is not a finished update. Every capture must be split, linked, and closed, or explicitly closed as "nothing new." Orphan captures can't slip past the gate.
-4. **Recall like a brain** — it doesn't dump the whole archive into the model. Three layers: `survey` reads a compact "where am I, where do I look" routing map; `probe` fans out along people, context cards, time neighbors; `deep` goes back to the exact quote. In between runs an **association channel**: it diffuses across the archive graph and surfaces candidates that share zero surface words but are genuinely related — like suddenly remembering something that seems unrelated but isn't. For broad questions ("what should I do"), it splits into a few lines of probe each and stitches the threads together — detective-board convergence.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A["user message"] --> B{"preflight router"}
-    B -->|personal content| C["immutable verbatim capture<br/>SHA-256 · session · source"]
-    C --> D["derivation ledger pending"]
-    D --> E["derive: events · entities<br/>context cards · hypotheses · follow-ups"]
-    E --> F["close: derived / nothing-new"]
-    B --> G["survey → probe → deep<br/>+ association channel"]
-    G --> H["deep = verbatim only"]
-    F --> I["session_check hard gate"]
-    I --> J["answer"]
-    J --> K["feedback loop"]
-    K -.->|quarterly| L["salience review + deep review"]
+```text
+your message → ① preflight: is this personal? (pure tech questions skip, never touch the archive)
+            → ② verbatim capture: full message on disk byte-for-byte + SHA-256, immutable
+            → ③ derive: events, entities, context cards, follow-ups; model guesses go to a separate hypothesis layer
+            → ④ closure: every capture explicitly closed; no closure, no "it's remembered"
+            → ⑤ later recall: survey the map → probe the fan-out → deep-read the verbatim, plus an association channel
 ```
 
-On disk it's plain files you can grep and back up: `sources/conversation/` holds the immutable verbatim + hashes, `memory/v2/` holds the derived timeline, entities, context cards, hypotheses, follow-ups, and retrieval traces. Old summaries that lost their source are honestly tagged `summary_only`, and retrieval tells you "this part comes from an old summary, not the verbatim."
+Mechanics of ①–④: [docs/how-it-works.md](docs/how-it-works.md) sections 1–3; ⑤ in sections 4–8.
+
+## Feature map
+
+Four groups: capture, organize, recall, maintain. Each line carries a one-sentence "why"; details are all linked.
+
+### Capture: when things come in
+
+- **Two-tier gate** — personal content goes the full pipeline; pure tech, "what to eat," one-off purchases never touch the archive. The model backstops classifier misses — over-capture beats under-capture. (Why: a missed capture is a permanently lost verbatim; [mechanics](docs/how-it-works.md))
+- **Immutable verbatim capture** — the full message lands byte-for-byte with SHA-256, timestamp, session tag; corrections append, never overwrite; attachments keep originals, OCR is only a derivation. (Why: summary-first makes the original unauditable; [mechanics](docs/how-it-works.md))
+- **Derivation closure + hard gate** — saving the words isn't "updated": records must be derived and the capture explicitly closed; orphan captures can't pass the pre-answer session_check. (Why: "trust me, I saved it" failed in real life — the [2.5.0 duplicate-record incident](docs/why-it-works.md); [mechanics](docs/how-it-works.md))
+- **Footprint discipline** — game-strategy, currently-reading/watching turns: targeted dedup first, exactly one light record, close gracefully on nothing-new. (Why: keeps one-off consultations from piling into archive noise; [mechanics](docs/how-it-works.md))
+
+### Organize: how the archive is shaped
+
+- **Timeline spine** — every record carries happened-date/precision/basis/phase/before-after neighbors; the recorded day can never impersonate the happened day. (Why: "you're currently in phase X" requires checking dates before telling stories; [policy](references/timeline-and-followup-policy.md))
+- **Entity profiles + context cards** — nine entity types (people, schools, places, works, games, concepts…) plus "school × football" cross-cards; facts stored once, cards are projections. (Why: mutable state written into entity bodies becomes never-updated zombie info; [policy](references/entity-and-context-policy.md))
+- **Five fact layers** — your verbatim / your evaluations / your explanations / model hypotheses / unconfirmable, always kept apart; model guesses stay `candidate`, need ≥2 pieces of evidence, and are never promoted. (Why: keeps the AI from filing its own speculation as your fact; [policy](references/causal-hypothesis-policy.md))
+- **Follow-ups** — "let's see in a few days" open loops are archived with due dates, and proactively asked about with full context when due. (Why: silence is not an answer; changing the subject is not resolution; [policy](references/timeline-and-followup-policy.md))
+
+### Recall: how it remembers
+
+- **survey → probe → deep, three progressive layers** — a 48K compact routing map orients first, then fan-out along entities/contexts/time neighbors, then verbatim verification; every step budget-capped, the archive is never dumped whole into the model. (Why: dumping the whole archive drowns the model in irrelevant memory; [mechanics](docs/how-it-works.md))
+- **Association channel (divergence)** — Personalized PageRank diffuses across the archive graph and surfaces zero-surface-overlap candidates that genuinely relate ("impact feel" → "Witcher 3 horseback handling"); a candidate pool, not a conclusion — the model cites only what holds. (Why: "out of books, give me one to chew on" once died in all three lexical channels — the [2.6.0 incident](docs/why-it-works.md); [mechanics](docs/how-it-works.md))
+- **Convergent reading (detective board)** — "what should I do" splits into emotion/interests/people threads probed separately, then stitched; answers layered as archive facts / pattern observations / model inference. (Why: broad questions can't be served by a single query; [mechanics](docs/how-it-works.md))
+- **Reverse cold-recall** — when keywords are gone, fan out from any person/place/time clue, walk time neighbors, browse time windows for the user to claim; declaring "not found" is forbidden. (Why: "not found" in a memory system is a lie — it means *not yet found*, not *doesn't exist*; [mechanics](docs/how-it-works.md))
+
+### Maintain: how the archive takes care of itself
+
+- **Feedback loop** — recorded only on explicit correction/confirmation, with the user's exact words as evidence; silence and topic changes are not signals. (Why: stops the model from grading its own homework; [policy](references/review-and-feedback-loops.md))
+- **Quarterly salience review** — imported weights unconfirmed for 180+ days drop to 0: retained, retrievable, out of the active map, never deleted. (Why: the archive only grows; weights drift; [policy](references/review-and-feedback-loops.md))
+- **Semantic review + three-state validation** — periodic scans for "summary posing as verbatim," "hypothesis quietly promoted," "misattribution"; structural validation reports clean/warnings/failed. ([mechanics](docs/how-it-works.md))
+- **Snapshot backups + scoped restore** — a snapshot is cut only after "ran fine for 7 days and validation passed"; restore comes in code/data/all scopes, dry-run by default. (Why: this archive really lost data once; [policy](references/maintenance-and-durability.md))
+- **Visual audit dashboard** — a pure local static page where you can click through the full chain: event → entity → context → verbatim. ([mechanics](docs/how-it-works.md))
 
 ## Quick start
 
+Hand your agent this one command (adjust the path to your client's skills folder):
+
 ```bash
 git clone https://github.com/caix84476-netizen/personal-understanding.git \
-    ~/.claude/skills/personal-understanding      # or your client's skills folder
-python scripts/init_archive.py            # bootstrap the archive skeleton (idempotent)
-python scripts/install_mcp.py --auto      # register the local MCP server (idempotent)
-# restart your client — personal_* tools go live, just talk normally
-python scripts/open_dashboard.py           # open the audit dashboard anytime
+    ~/.claude/skills/personal-understanding && \
+cd ~/.claude/skills/personal-understanding && \
+python scripts/init_archive.py && \
+python scripts/install_mcp.py --auto
 ```
 
-Requires Python 3.10+, stdlib only, zero pip deps, Windows / macOS / Linux. You can also `pip install personal-understanding` for the server side, but the full skill brain (`SKILL.md` + audit dashboard) is best via the clone above.
+Restart your client — the `personal_*` tools go live, and you just talk: "I've been feeling…", "remember that…", "why do I keep…" — it picks up on its own. Step-by-step manual guide (with verification checklist, upgrade, uninstall): [docs/install.md](docs/install.md).
 
-Once it's in, just talk — "I've been feeling…", "remember that…", "why do I keep…" — and it picks it up. Ask "what do you remember about…", or "where does that come from?", and follow the evidence chain all the way down.
+Requires Python 3.10+, stdlib only, zero pip deps, Windows / macOS / Linux. You can also `pip install personal-understanding` for the server side, but the full brain (`SKILL.md` + audit dashboard) is best via the clone above.
+
+## Design
+
+Why verbatim-first, why the hard gate, why honesty beats recall rate, and what every version fixed: [docs/why-it-works.md](docs/why-it-works.md). One-line summary: **it's not a designed framework — it's a daily-driven archive hardened by a dozen rounds of real incidents** — the classifier once locked "I feel suffocated" out of the archive, dateless records were once silently buried by time decay, and whole-sentence colloquial queries were once topped by fake slices. Every fix has its scene in the [CHANGELOG](CHANGELOG.md).
+
+The retrieval and tokenization layers stand on prior work ([per-item adoption/rejection with measured results](docs/why-it-works.md)): **SYNAPSE** (ACL 2026 Findings, spreading-activation gating), **HippoRAG** (NeurIPS 2024, PPR seed weighting), **Generative Agents** (Stanford, time decay), **Qiao & Sun** (ACL Y09-2003, self-trained lexicons), **jieba** (MIT, Chinese segmentation).
+
+## Project layout
+
+```text
+personal-understanding/
+├── SKILL.md                 # per-turn contract: gates, verbatim, closure, three-layer retrieval
+├── docs/                    # how-it-works (mechanics) · why-it-works (rationale) · install
+├── references/              # 14 field-level policy files (capture/retrieval/timeline/entities/…)
+├── scripts/                 # the whole implementation, Python stdlib only
+│   ├── mcp_server.py        # MCP server (11 personal_* tools)
+│   ├── preflight_context.py · capture_user_update.py · finalize_capture.py · session_check.py
+│   ├── catalog_context.py · retrieve_v2.py   # survey / probe / deep
+│   ├── ppr.py · lexicon.py                   # association channel / token hygiene
+│   └── validate_memory.py · review_v2.py · salience_review.py · backup_archive.py
+├── dashboard/               # visual audit panel (pure local static page)
+├── templates/branches/      # six life-domain branch templates
+├── resources/lexicon/       # jieba lexicon (vendored, MIT)
+├── tests/                   # 180+ regression tests + acceptance suites
+└── VERSION / CHANGELOG.md   # version + battle-tested repair log
+```
 
 ## Your data stays yours
 
-Everything runs locally, inside the skill folder. No telemetry, no cloud calls, no third-party embeddings. The shipped `.gitignore` blocks `memory/`, `sources/`, and `backups/` — you can version-control your skill folder and never accidentally commit your private archive.
-
-## Where it came from
-
-Not a framework thought up in an afternoon — a working archive refined through daily use and a dozen hardening rounds (see the [CHANGELOG](CHANGELOG.md)). A salience-decay bug that once shredded frontmatter is why all writes are now atomic; survey used to load ~800 KB of legacy catalog per turn — now it's a ~90 KB routing map; the whole derivation-closure and hard-gate machinery exists because "trust me, I saved it" wasn't good enough for real life.
+Everything runs locally, inside this folder. No telemetry, no cloud calls, no third-party embedding services. The shipped `.gitignore` blocks `memory/`, `sources/`, and `backups/` — you can version-control this directory and never accidentally commit your private archive.
 
 ## License
 
